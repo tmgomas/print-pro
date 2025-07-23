@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Repositories\CompanyRepository;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 
 class CompanyService extends BaseService
 {
