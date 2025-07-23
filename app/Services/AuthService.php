@@ -3,252 +3,405 @@
 namespace App\Services;
 
 use App\Models\User;
-use App\Models\Company;
-use App\Models\Branch;
-use App\Repositories\UserRepository;
-use Illuminate\Auth\Events\Registered;
+use App\Models\UserActivity;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class AuthService
 {
-    public function __construct(
-        private UserRepository $userRepository
-    ) {}
-
     /**
-     * Register a new company with admin user
+     * Register a new user
      */
-    public function registerCompany(array $companyData, array $adminData): User
+    public function registerUser(array $data): User
     {
-        \DB::transaction(function () use ($companyData, $adminData, &$user) {
-            // Create company
-            $company = Company::create([
-                'name' => $companyData['company_name'],
-                'registration_number' => $companyData['registration_number'] ?? null,
-                'address' => $companyData['address'],
-                'phone' => $companyData['phone'],
-                'email' => $companyData['email'],
-                'tax_rate' => $companyData['tax_rate'] ?? 0.00,
-                'tax_number' => $companyData['tax_number'] ?? null,
-            ]);
+        return DB::transaction(function () use ($data) {
+            // Split name if provided as full name
+            if (isset($data['name']) && !isset($data['first_name'])) {
+                $nameParts = explode(' ', trim($data['name']), 2);
+                $data['first_name'] = $nameParts[0];
+                $data['last_name'] = isset($nameParts[1]) ? $nameParts[1] : '';
+            }
 
-            // Create main branch
-            $branch = Branch::create([
-                'company_id' => $company->id,
-                'name' => $companyData['branch_name'] ?? 'Main Branch',
-                'code' => $this->generateBranchCode($companyData['company_name']),
-                'address' => $companyData['address'],
-                'phone' => $companyData['phone'],
-                'email' => $companyData['email'],
-                'is_main_branch' => true,
-                'status' => 'active',
-            ]);
-
-            // Create admin user
             $user = User::create([
-                'first_name' => $adminData['first_name'],
-                'last_name' => $adminData['last_name'],
-                'email' => $adminData['email'],
-                'phone' => $adminData['phone'] ?? null,
-                'password' => Hash::make($adminData['password']),
-                'company_id' => $company->id,
-                'branch_id' => $branch->id,
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'] ?? '',
+                'email' => $data['email'],
+                'password' => Hash::make($data['password']),
+                'phone' => $data['phone'] ?? null,
                 'status' => 'active',
+                'company_id' => $data['company_id'] ?? null,
+                'branch_id' => $data['branch_id'] ?? null,
+                'email_verified_at' => now(), // Auto-verify for now
             ]);
 
-            // Assign Company Admin role
-            $user->assignRole('Company Admin');
+            // Assign default role if specified
+            if (isset($data['role'])) {
+                $user->assignRole($data['role']);
+            }
 
-            event(new Registered($user));
+            // Log activity
+            $this->logActivity($user, 'user_registered', 'User account created');
+
+            return $user;
         });
-
-        return $user;
     }
 
     /**
-     * Create a new user
+     * Create a new user (for admin creation)
      */
-    public function createUser(array $userData): User
+    public function createUser(array $data): User
     {
-        $user = User::create([
-            'first_name' => $userData['first_name'],
-            'last_name' => $userData['last_name'],
-            'email' => $userData['email'],
-            'phone' => $userData['phone'] ?? null,
-            'password' => Hash::make($userData['password']),
-            'company_id' => $userData['company_id'],
-            'branch_id' => $userData['branch_id'] ?? null,
-            'status' => $userData['status'] ?? 'active',
-        ]);
+        return DB::transaction(function () use ($data) {
+            $user = User::create([
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'] ?? '',
+                'email' => $data['email'],
+                'password' => Hash::make($data['password']),
+                'phone' => $data['phone'] ?? null,
+                'status' => $data['status'] ?? 'active',
+                'company_id' => $data['company_id'] ?? null,
+                'branch_id' => $data['branch_id'] ?? null,
+                'email_verified_at' => now(),
+            ]);
 
-        // Assign role if provided
-        if (!empty($userData['role'])) {
-            $user->assignRole($userData['role']);
-        }
-
-        event(new Registered($user));
-
-        return $user;
-    }
-
-    /**
-     * Authenticate user and update login info
-     */
-    public function login(array $credentials, Request $request): bool
-    {
-        if (Auth::attempt($credentials, $request->boolean('remember'))) {
-            $user = Auth::user();
-            
-            // Check if user is active
-            if (!$user->isActive()) {
-                Auth::logout();
-                return false;
+            // Assign role if specified
+            if (isset($data['role'])) {
+                $user->assignRole($data['role']);
             }
 
-            // Update last login info
-            $user->updateLastLogin($request->ip());
-            
-            $request->session()->regenerate();
-            
-            return true;
-        }
+            // Assign permissions if specified
+            if (isset($data['permissions'])) {
+                $user->givePermissionTo($data['permissions']);
+            }
 
-        return false;
+            // Log activity
+            $this->logActivity($user, 'user_created', 'User created by admin', [
+                'created_by' => auth()->id(),
+            ]);
+
+            return $user;
+        });
     }
 
     /**
-     * Update user profile
+     * Update user information
      */
-    public function updateProfile(User $user, array $data): User
+    public function updateUser(User $user, array $data): User
     {
-        $updateData = [
-            'first_name' => $data['first_name'],
-            'last_name' => $data['last_name'],
-            'phone' => $data['phone'] ?? null,
-        ];
+        return DB::transaction(function () use ($user, $data) {
+            $originalData = $user->toArray();
 
-        // Handle avatar upload
-        if (isset($data['avatar']) && $data['avatar']) {
-            // Delete old avatar
-            if ($user->avatar) {
-                Storage::delete($user->avatar);
+            // Update basic information
+            $user->update([
+                'first_name' => $data['first_name'] ?? $user->first_name,
+                'last_name' => $data['last_name'] ?? $user->last_name,
+                'email' => $data['email'] ?? $user->email,
+                'phone' => $data['phone'] ?? $user->phone,
+                'company_id' => $data['company_id'] ?? $user->company_id,
+                'branch_id' => $data['branch_id'] ?? $user->branch_id,
+            ]);
+
+            // Update password if provided
+            if (isset($data['password']) && !empty($data['password'])) {
+                $user->update(['password' => Hash::make($data['password'])]);
             }
-            
-            $updateData['avatar'] = $data['avatar']->store('avatars', 'public');
-        }
 
-        $user->update($updateData);
+            // Update role if specified
+            if (isset($data['role'])) {
+                $user->syncRoles([$data['role']]);
+            }
 
-        return $user->fresh();
+            // Update permissions if specified
+            if (isset($data['permissions'])) {
+                $user->syncPermissions($data['permissions']);
+            }
+
+            // Log activity
+            $this->logActivity($user, 'user_updated', 'User information updated', [
+                'updated_by' => auth()->id(),
+                'changes' => array_diff_assoc($user->toArray(), $originalData),
+            ]);
+
+            return $user->fresh();
+        });
     }
 
     /**
      * Update user password
      */
-    public function updatePassword(User $user, string $newPassword): void
+    public function updatePassword(User $user, string $newPassword): bool
+    {
+        $updated = $user->update([
+            'password' => Hash::make($newPassword),
+            'password_changed_at' => now(),
+        ]);
+
+        if ($updated) {
+            $this->logActivity($user, 'password_changed', 'Password updated');
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Update user status
+     */
+    public function updateUserStatus(User $user, string $status): bool
+    {
+        $oldStatus = $user->status;
+        $updated = $user->update(['status' => $status]);
+
+        if ($updated) {
+            $this->logActivity($user, 'status_changed', "Status changed from {$oldStatus} to {$status}", [
+                'old_status' => $oldStatus,
+                'new_status' => $status,
+                'changed_by' => auth()->id(),
+            ]);
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Activate user
+     */
+    public function activateUser(User $user): bool
+    {
+        return $this->updateUserStatus($user, 'active');
+    }
+
+    /**
+     * Deactivate user
+     */
+    public function deactivateUser(User $user): bool
+    {
+        return $this->updateUserStatus($user, 'inactive');
+    }
+
+    /**
+     * Suspend user
+     */
+    public function suspendUser(User $user): bool
+    {
+        return $this->updateUserStatus($user, 'suspended');
+    }
+
+    /**
+     * Track user login
+     */
+    public function trackLogin(User $user, string $ipAddress = null): void
     {
         $user->update([
-            'password' => Hash::make($newPassword)
+            'last_login_at' => now(),
+            'last_login_ip' => $ipAddress,
+        ]);
+
+        $this->logActivity($user, 'user_login', 'User logged in', [
+            'ip_address' => $ipAddress,
+            'user_agent' => request()->userAgent(),
         ]);
     }
 
     /**
-     * Check if user can access resource
+     * Track user logout
      */
-    public function canAccessCompany(User $user, Company $company): bool
+    public function trackLogout(User $user): void
     {
-        if ($user->isSuperAdmin()) {
+        if ($user) {
+            $this->logActivity($user, 'user_logout', 'User logged out', [
+                'ip_address' => request()->ip(),
+            ]);
+        }
+    }
+
+    /**
+     * Bulk actions on users
+     */
+    public function bulkUserAction(string $action, array $userIds): int
+    {
+        $count = 0;
+        
+        foreach ($userIds as $userId) {
+            $user = User::find($userId);
+            if (!$user) continue;
+
+            try {
+                switch ($action) {
+                    case 'activate':
+                        $this->activateUser($user);
+                        $count++;
+                        break;
+                    case 'deactivate':
+                        $this->deactivateUser($user);
+                        $count++;
+                        break;
+                    case 'suspend':
+                        $this->suspendUser($user);
+                        $count++;
+                        break;
+                    case 'delete':
+                        $user->delete();
+                        $this->logActivity($user, 'user_deleted', 'User deleted via bulk action', [
+                            'deleted_by' => auth()->id(),
+                        ]);
+                        $count++;
+                        break;
+                }
+            } catch (\Exception $e) {
+                Log::error("Bulk action failed for user {$userId}: " . $e->getMessage());
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Send password reset notification
+     */
+    public function sendPasswordResetNotification(string $email): bool
+    {
+        $user = User::where('email', $email)->first();
+        
+        if (!$user) {
+            return false;
+        }
+
+        // Generate reset token (you might want to use Laravel's built-in password reset)
+        $token = Str::random(64);
+        
+        // Store token in database (create password_resets table)
+        DB::table('password_resets')->updateOrInsert(
+            ['email' => $email],
+            [
+                'token' => Hash::make($token),
+                'created_at' => now(),
+            ]
+        );
+
+        // Log activity
+        $this->logActivity($user, 'password_reset_requested', 'Password reset requested');
+
+        // Send email notification (implement your email logic here)
+        // Mail::to($user)->send(new PasswordResetMail($token));
+
+        return true;
+    }
+
+    /**
+     * Reset password using token
+     */
+    public function resetPassword(string $email, string $token, string $newPassword): bool
+    {
+        $resetRecord = DB::table('password_resets')
+            ->where('email', $email)
+            ->first();
+
+        if (!$resetRecord || !Hash::check($token, $resetRecord->token)) {
+            return false;
+        }
+
+        // Check if token is not expired (24 hours)
+        if (Carbon::parse($resetRecord->created_at)->addHours(24)->isPast()) {
+            return false;
+        }
+
+        $user = User::where('email', $email)->first();
+        if (!$user) {
+            return false;
+        }
+
+        // Update password
+        $this->updatePassword($user, $newPassword);
+
+        // Delete reset token
+        DB::table('password_resets')->where('email', $email)->delete();
+
+        $this->logActivity($user, 'password_reset_completed', 'Password reset completed');
+
+        return true;
+    }
+
+    /**
+     * Verify user email
+     */
+    public function verifyEmail(User $user): bool
+    {
+        $updated = $user->update(['email_verified_at' => now()]);
+
+        if ($updated) {
+            $this->logActivity($user, 'email_verified', 'Email address verified');
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Check if user can perform action on target user
+     */
+    public function canManageUser(User $actor, User $target): bool
+    {
+        // Super Admin can manage anyone
+        if ($actor->hasRole('Super Admin')) {
             return true;
         }
 
-        return $user->belongsToCompany($company);
-    }
-
-    /**
-     * Check if user can access branch
-     */
-    public function canAccessBranch(User $user, Branch $branch): bool
-    {
-        return $user->canAccessBranch($branch);
-    }
-
-    /**
-     * Get user's accessible branches
-     */
-    public function getAccessibleBranches(User $user): \Illuminate\Database\Eloquent\Collection
-    {
-        if ($user->isSuperAdmin()) {
-            return Branch::active()->get();
+        // Company Admin can manage users in their company (except Super Admins)
+        if ($actor->hasRole('Company Admin')) {
+            return $target->company_id === $actor->company_id && 
+                   !$target->hasRole('Super Admin');
         }
 
-        if ($user->isCompanyAdmin()) {
-            return $user->company->activeBranches;
+        // Branch Manager can manage users in their branch (except Super Admins and Company Admins)
+        if ($actor->hasRole('Branch Manager')) {
+            return $target->branch_id === $actor->branch_id && 
+                   !$target->hasRole(['Super Admin', 'Company Admin']);
         }
 
-        return Branch::where('id', $user->branch_id)->active()->get();
+        // Users can only manage themselves
+        return $actor->id === $target->id;
     }
 
     /**
-     * Generate branch code from company name
+     * Log user activity
      */
-    private function generateBranchCode(string $companyName): string
+    private function logActivity(User $user, string $action, string $description, array $metadata = []): void
     {
-        $code = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $companyName), 0, 3));
+        try {
+            UserActivity::create([
+                'user_id' => $user->id,
+                'action' => $action,
+                'description' => $description,
+                'metadata' => json_encode($metadata),
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'created_at' => now(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to log user activity: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get user activities
+     */
+    public function getUserActivities(User $user, int $limit = 50): \Illuminate\Support\Collection
+    {
+        return UserActivity::where('user_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+    }
+
+    /**
+     * Clean up old user activities (for maintenance)
+     */
+    public function cleanupOldActivities(int $daysToKeep = 90): int
+    {
+        $cutoffDate = now()->subDays($daysToKeep);
         
-        // Ensure uniqueness
-        $counter = 1;
-        $originalCode = $code;
-        
-        while (Branch::where('code', $code)->exists()) {
-            $code = $originalCode . str_pad($counter, 2, '0', STR_PAD_LEFT);
-            $counter++;
-        }
-
-        return $code;
-    }
-
-    /**
-     * Activate user account
-     */
-    public function activateUser(User $user): void
-    {
-        $user->update(['status' => 'active']);
-    }
-
-    /**
-     * Deactivate user account
-     */
-    public function deactivateUser(User $user): void
-    {
-        $user->update(['status' => 'inactive']);
-    }
-
-    /**
-     * Suspend user account
-     */
-    public function suspendUser(User $user): void
-    {
-        $user->update(['status' => 'suspended']);
-    }
-
-    /**
-     * Get users by role for a company/branch
-     */
-    public function getUsersByRole(string $role, ?int $companyId = null, ?int $branchId = null): \Illuminate\Database\Eloquent\Collection
-    {
-        $query = User::role($role)->active();
-
-        if ($companyId) {
-            $query->forCompany($companyId);
-        }
-
-        if ($branchId) {
-            $query->forBranch($branchId);
-        }
-
-        return $query->get();
+        return UserActivity::where('created_at', '<', $cutoffDate)->delete();
     }
 }

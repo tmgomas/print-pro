@@ -3,88 +3,74 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\CompanyRegistrationRequest;
+use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Auth\RegisterRequest;
 use App\Services\AuthService;
-use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AuthController extends Controller
 {
-    public function __construct(
-        private AuthService $authService
-    ) {}
+    protected AuthService $authService;
+
+    public function __construct(AuthService $authService)
+    {
+        $this->authService = $authService;
+    }
 
     /**
-     * Show the login form
+     * Show the login page.
      */
-    public function showLogin(): Response
+    public function showLogin(Request $request): Response
     {
-        return Inertia::render('Auth/Login', [
-            'canResetPassword' => true,
-            'status' => session('status'),
+        return Inertia::render('auth/login', [
+            'canResetPassword' => Route::has('password.request'),
+            'status' => $request->session()->get('status'),
         ]);
     }
 
     /**
-     * Handle login request
+     * Handle login request - Redirect everyone to single dashboard
      */
-    public function login(Request $request): RedirectResponse
+    public function login(LoginRequest $request): RedirectResponse
     {
-        $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required'],
-        ]);
+        $request->authenticate();
+        $request->session()->regenerate();
 
-        $credentials = $request->only('email', 'password');
+        $user = Auth::user();
+        
+        // Track login activity
+        $this->authService->trackLogin($user, $request->ip());
 
-        if ($this->authService->login($credentials, $request)) {
-            $user = Auth::user();
-            
-            // Redirect based on role
-            return $this->redirectAfterLogin($user);
-        }
-
-        throw ValidationException::withMessages([
-            'email' => __('auth.failed'),
-        ]);
+        // Always redirect to the main dashboard regardless of role
+        return redirect()->intended(route('dashboard'));
     }
 
     /**
-     * Show company registration form
+     * Show the registration page.
      */
-    public function showCompanyRegistration(): Response
+    public function showRegister(): Response
     {
-        return Inertia::render('Auth/CompanyRegistration', [
-            'availableRoles' => [
-                'Company Admin' => 'Company Admin',
-                'Branch Manager' => 'Branch Manager',
-                'Cashier' => 'Cashier',
-                'Production Staff' => 'Production Staff',
-                'Delivery Coordinator' => 'Delivery Coordinator',
-            ],
-        ]);
+        return Inertia::render('auth/register');
     }
 
     /**
-     * Handle company registration
+     * Handle registration request - Redirect to single dashboard
      */
-    public function registerCompany(CompanyRegistrationRequest $request): RedirectResponse
+    public function register(RegisterRequest $request): RedirectResponse
     {
         try {
-            $user = $this->authService->registerCompany(
-                $request->getCompanyData(),
-                $request->getAdminData()
-            );
-
+            $user = $this->authService->registerUser($request->validated());
+            
             Auth::login($user);
-
-            return redirect()->route('dashboard')
-                ->with('success', 'Company registered successfully! Welcome to PrintCraft Pro.');
-
+            
+            // Always redirect to the main dashboard regardless of role
+            return redirect()->route('dashboard');
+            
         } catch (\Exception $e) {
             return back()
                 ->withInput()
@@ -93,91 +79,17 @@ class AuthController extends Controller
     }
 
     /**
-     * Handle logout
+     * Handle logout request
      */
     public function logout(Request $request): RedirectResponse
     {
+        $this->authService->trackLogout(Auth::user());
+        
         Auth::guard('web')->logout();
-
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('login');
-    }
-
-    /**
-     * Show profile page
-     */
-    public function profile(): Response
-    {
-        $user = Auth::user();
-        
-        return Inertia::render('Auth/Profile', [
-            'user' => [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-                'avatar_url' => $user->avatar_url,
-                'company' => $user->company ? [
-                    'id' => $user->company->id,
-                    'name' => $user->company->name,
-                    'logo_url' => $user->company->logo_url,
-                ] : null,
-                'branch' => $user->branch ? [
-                    'id' => $user->branch->id,
-                    'name' => $user->branch->name,
-                ] : null,
-                'roles' => $user->roles->pluck('name'),
-                'last_login_at' => $user->last_login_at?->format('Y-m-d H:i:s'),
-                'created_at' => $user->created_at->format('Y-m-d H:i:s'),
-            ],
-            'stats' => [
-                'total_logins' => $user->preferences['total_logins'] ?? 0,
-                'account_age_days' => $user->created_at->diffInDays(now()),
-            ],
-        ]);
-    }
-
-    /**
-     * Update user profile
-     */
-    public function updateProfile(Request $request): RedirectResponse
-    {
-        $request->validate([
-            'first_name' => ['required', 'string', 'max:255'],
-            'last_name' => ['required', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:20'],
-            'avatar' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif', 'max:2048'],
-        ]);
-
-        try {
-            $this->authService->updateProfile(Auth::user(), $request->all());
-            
-            return back()->with('success', 'Profile updated successfully.');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => 'Profile update failed. Please try again.']);
-        }
-    }
-
-    /**
-     * Update user password
-     */
-    public function updatePassword(Request $request): RedirectResponse
-    {
-        $request->validate([
-            'current_password' => ['required', 'current_password'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
-        ]);
-
-        try {
-            $this->authService->updatePassword(Auth::user(), $request->password);
-            
-            return back()->with('success', 'Password updated successfully.');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => 'Password update failed. Please try again.']);
-        }
+        return redirect()->route('home');
     }
 
     /**
@@ -185,7 +97,7 @@ class AuthController extends Controller
      */
     public function showForgotPassword(): Response
     {
-        return Inertia::render('Auth/ForgotPassword', [
+        return Inertia::render('auth/forgot-password', [
             'status' => session('status'),
         ]);
     }
@@ -195,7 +107,7 @@ class AuthController extends Controller
      */
     public function showResetPassword(Request $request): Response
     {
-        return Inertia::render('Auth/ResetPassword', [
+        return Inertia::render('auth/reset-password', [
             'email' => $request->email,
             'token' => $request->route('token'),
         ]);
@@ -206,40 +118,8 @@ class AuthController extends Controller
      */
     public function verificationNotice(): Response
     {
-        return Inertia::render('Auth/VerifyEmail', [
+        return Inertia::render('auth/verify-email', [
             'status' => session('status'),
         ]);
-    }
-
-    /**
-     * Redirect user after login based on their role
-     */
-    private function redirectAfterLogin($user): RedirectResponse
-    {
-        if ($user->isSuperAdmin()) {
-            return redirect()->route('admin.dashboard');
-        }
-
-        if ($user->isCompanyAdmin()) {
-            return redirect()->route('company.dashboard');
-        }
-
-        if ($user->hasRole('Branch Manager')) {
-            return redirect()->route('branch.dashboard');
-        }
-
-        if ($user->hasRole('Cashier')) {
-            return redirect()->route('cashier.dashboard');
-        }
-
-        if ($user->hasRole('Production Staff')) {
-            return redirect()->route('production.dashboard');
-        }
-
-        if ($user->hasRole('Delivery Coordinator')) {
-            return redirect()->route('delivery.dashboard');
-        }
-
-        return redirect()->route('dashboard');
     }
 }
