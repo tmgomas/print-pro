@@ -12,9 +12,11 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests; // Add this line
 
 class UserManagementController extends Controller
 {
+      use AuthorizesRequests; // Add this line
     public function __construct(
         private AuthService $authService,
         private UserRepository $userRepository,
