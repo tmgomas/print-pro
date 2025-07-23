@@ -95,9 +95,11 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::middleware('permission:manage users')->group(function () {
-        Route::resource('users', UserManagementController::class);
-        Route::post('users/bulk-action', [UserManagementController::class, 'bulkAction'])->name('users.bulk-action');
-        Route::patch('users/{id}/toggle-status', [UserManagementController::class, 'toggleStatus'])->name('users.toggle-status');
+    Route::resource('users', UserManagementController::class);
+    Route::post('users/{user}/activate', [UserManagementController::class, 'activate'])->name('users.activate');
+    Route::post('users/{user}/deactivate', [UserManagementController::class, 'deactivate'])->name('users.deactivate');
+    Route::post('users/{user}/suspend', [UserManagementController::class, 'suspend'])->name('users.suspend');
+    Route::post('users/bulk-action', [UserManagementController::class, 'bulkAction'])->name('users.bulk-action');   
     });
 
     /*
