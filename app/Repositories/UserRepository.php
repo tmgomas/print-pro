@@ -66,4 +66,6 @@ class UserRepository extends BaseRepository
             ->active()
             ->get();
     }
+    
+    
 }
