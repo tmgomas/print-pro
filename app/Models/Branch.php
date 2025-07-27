@@ -55,6 +55,22 @@ class Branch extends Model
     }
 
     /**
+     * Get the branch's customers
+     */
+    public function customers(): HasMany
+    {
+        return $this->hasMany(Customer::class);
+    }
+
+    /**
+     * Get the branch's invoices
+     */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
+    /**
      * Get active users for this branch
      */
     public function activeUsers(): HasMany
