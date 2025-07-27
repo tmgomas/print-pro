@@ -31,23 +31,22 @@ class BranchController extends Controller
     /**
      * Show the form for creating a new branch
      */
-    public function create(): Response
-    {
-        $this->authorize('create branches');
+  public function create(): Response
+{
+    $this->authorize('create branches');
 
-        // Get companies for dropdown - FIXED: This was missing
-        $companies = $this->companyRepository->getForDropdown();
-        
-        return Inertia::render('Branches/Create', [
-            'companies' => $companies->map(function ($company) {
-                return [
-                    'value' => $company->id,
-                    'label' => $company->name . ' (' . $company->registration_number . ')',
-                ];
-            })->toArray(),
-        ]);
-    }
-
+    // Get companies for dropdown - FIXED: This was missing
+    $companies = $this->companyRepository->getForDropdown();
+    
+    return Inertia::render('Branches/Create', [
+        'companies' => $companies->map(function ($company) {
+            return [
+                'value' => $company->id,
+                'label' => $company->company_name . ' (' . $company->company_code . ')',
+            ];
+        })->toArray(),
+    ]);
+}
     /**
      * Store a newly created branch
      */

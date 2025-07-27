@@ -12,7 +12,13 @@ class CompanyRepository extends BaseRepository
     {
         parent::__construct($model);
     }
-
+ public function getForDropdown(): Collection
+    {
+        return $this->model
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get(['id', 'name', 'registration_number']);
+    }
     /**
      * Get paginated companies with filters
      */
