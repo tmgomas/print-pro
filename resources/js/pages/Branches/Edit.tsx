@@ -6,8 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+// Switch component not available, using checkbox instead
 import InputError from '@/components/input-error';
-import { ArrowLeft, Building2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Building2, AlertTriangle, MapPin, Phone, Mail } from 'lucide-react';
 import { BreadcrumbItem } from '@/types';
 
 interface Branch {
@@ -20,6 +21,8 @@ interface Branch {
     postal_code?: string;
     phone?: string;
     email?: string;
+    latitude?: string;
+    longitude?: string;
     is_main_branch: boolean;
     status: string;
     company: {
@@ -34,43 +37,6 @@ interface Props {
     companies?: Array<{ value: string; label: string }>;
 }
 
-import { useState } from 'react';
-import { Head, Link, useForm } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import InputError from '@/components/input-error';
-import { ArrowLeft, Building2, AlertTriangle } from 'lucide-react';
-import { BreadcrumbItem } from '@/types';
-
-interface Branch {
-    id: number;
-    name: string;
-    code: string;
-    company_id: number;
-    address?: string;
-    city?: string;
-    postal_code?: string;
-    phone?: string;
-    email?: string;
-    is_main_branch: boolean;
-    status: string;
-    company: {
-        id: number;
-        name: string;
-        logo_url?: string;
-    };
-}
-
-interface Props {
-    branch: Branch;
-    companies: Array<{ value: string; label: string }>;
-}
-
 export default function EditBranch({ branch, companies = [] }: Props) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Dashboard', href: '/dashboard' },
@@ -82,22 +48,35 @@ export default function EditBranch({ branch, companies = [] }: Props) {
     const { data, setData, put, processing, errors } = useForm({
         name: branch.name,
         code: branch.code,
-        company_id: branch.company_id,
+        company_id: branch.company_id.toString(),
         address: branch.address || '',
         city: branch.city || '',
         postal_code: branch.postal_code || '',
         phone: branch.phone || '',
         email: branch.email || '',
+        latitude: branch.latitude || '',
+        longitude: branch.longitude || '',
         is_main_branch: branch.is_main_branch,
         status: branch.status,
     });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // Convert company_id back to number for submission
+        const submitData = {
+            ...data,
+            company_id: parseInt(data.company_id),
+        };
+
         put(`/branches/${branch.id}`, {
+            data: submitData,
             onSuccess: () => {
                 // Will be redirected by controller
             },
+            onError: (errors) => {
+                console.error('Update failed:', errors);
+            }
         });
     };
 
@@ -141,6 +120,7 @@ export default function EditBranch({ branch, companies = [] }: Props) {
                                                 value={data.company_id}
                                                 onChange={(e) => setData('company_id', e.target.value)}
                                                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                                required
                                             >
                                                 <option value="">Select Company</option>
                                                 {companies && companies.length > 0 ? companies.map((company) => (
@@ -163,6 +143,7 @@ export default function EditBranch({ branch, companies = [] }: Props) {
                                                 onChange={(e) => setData('code', e.target.value.toUpperCase())}
                                                 placeholder="e.g., COL001, KAN002"
                                                 className="uppercase"
+                                                required
                                             />
                                             <InputError message={errors.code} />
                                             <p className="text-xs text-muted-foreground">
@@ -178,6 +159,7 @@ export default function EditBranch({ branch, companies = [] }: Props) {
                                                 value={data.name}
                                                 onChange={(e) => setData('name', e.target.value)}
                                                 placeholder="Enter branch name"
+                                                required
                                             />
                                             <InputError message={errors.name} />
                                         </div>
@@ -188,7 +170,10 @@ export default function EditBranch({ branch, companies = [] }: Props) {
                             {/* Contact Information */}
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Contact Information</CardTitle>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <MapPin className="h-5 w-5" />
+                                        Contact Information
+                                    </CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <div className="grid gap-2">
@@ -229,7 +214,10 @@ export default function EditBranch({ branch, companies = [] }: Props) {
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="phone">Phone Number</Label>
+                                            <Label htmlFor="phone">
+                                                <Phone className="h-4 w-4 inline mr-1" />
+                                                Phone Number
+                                            </Label>
                                             <Input
                                                 id="phone"
                                                 type="tel"
@@ -241,7 +229,10 @@ export default function EditBranch({ branch, companies = [] }: Props) {
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="email">Email Address</Label>
+                                            <Label htmlFor="email">
+                                                <Mail className="h-4 w-4 inline mr-1" />
+                                                Email Address
+                                            </Label>
                                             <Input
                                                 id="email"
                                                 type="email"
@@ -252,6 +243,46 @@ export default function EditBranch({ branch, companies = [] }: Props) {
                                             <InputError message={errors.email} />
                                         </div>
                                     </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Location Coordinates */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <MapPin className="h-5 w-5" />
+                                        Location Coordinates
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="latitude">Latitude</Label>
+                                            <Input
+                                                id="latitude"
+                                                type="text"
+                                                value={data.latitude}
+                                                onChange={(e) => setData('latitude', e.target.value)}
+                                                placeholder="e.g., 6.9271"
+                                            />
+                                            <InputError message={errors.latitude} />
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="longitude">Longitude</Label>
+                                            <Input
+                                                id="longitude"
+                                                type="text"
+                                                value={data.longitude}
+                                                onChange={(e) => setData('longitude', e.target.value)}
+                                                placeholder="e.g., 79.8612"
+                                            />
+                                            <InputError message={errors.longitude} />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Optional: GPS coordinates for delivery and location services
+                                    </p>
                                 </CardContent>
                             </Card>
                         </div>
@@ -377,6 +408,7 @@ export default function EditBranch({ branch, companies = [] }: Props) {
                                             <li>• Only one main branch is allowed per company</li>
                                             <li>• Inactive branches cannot process new orders</li>
                                             <li>• Users will retain access to historical data</li>
+                                            <li>• GPS coordinates help with delivery routing</li>
                                         </ul>
                                     </div>
                                 </CardContent>

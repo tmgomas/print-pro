@@ -13,7 +13,7 @@ class BranchUpdateRequest extends FormRequest
     public function authorize(): bool
     {
         $branch = $this->route('branch');
-        return $this->user()->can('update', $branch);
+        return $this->user()->can('edit branches', $branch);
     }
 
     /**

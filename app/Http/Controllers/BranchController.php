@@ -69,21 +69,39 @@ class BranchController extends Controller
     /**
      * Display a listing of branches
      */
-    public function index(): Response
-    {
-        $this->authorize('view branches');
+  public function index(): Response
+{
+    $this->authorize('view branches');
 
-        $branches = $this->branchRepository->getAllWithFilters(
-            request()->get('search'),
-            request()->get('status'),
-            request()->get('company_id')
-        );
+    // Get branches with pagination
+    $branches = $this->branchRepository->getAllWithFilters(
+        request()->get('search'),
+        request()->get('status'),
+        request()->get('company_id')
+    );
 
-        return Inertia::render('Branches/Index', [
-            'branches' => $branches,
-            'filters' => request()->only(['search', 'status', 'company_id']),
-        ]);
-    }
+    // Get stats
+    $stats = [
+        'total' => $branches->count(),
+        'active' => $branches->where('status', 'active')->count(),
+        'inactive' => $branches->where('status', 'inactive')->count(),
+        'main_branches' => $branches->where('is_main_branch', true)->count(),
+    ];
+
+    return Inertia::render('Branches/Index', [
+        'branches' => [
+            'data' => $branches->toArray(),
+            'current_page' => 1,
+            'last_page' => 1,
+            'per_page' => $branches->count(),
+            'total' => $branches->count(),
+            'from' => 1,
+            'to' => $branches->count(),
+        ],
+        'stats' => $stats,
+        'filters' => request()->only(['search', 'status', 'company_id']),
+    ]);
+}
 
     /**
      * Display the specified branch
@@ -120,7 +138,7 @@ class BranchController extends Controller
     {
         $branch = $this->branchRepository->findOrFail($id);
         
-        $this->authorize('update branches', $branch);
+        $this->authorize('edit branches', $branch);
 
         try {
             $updatedBranch = $this->branchService->updateBranch($branch, $request->validated());
