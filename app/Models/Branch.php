@@ -1,4 +1,5 @@
 <?php
+// 1. CORRECTED Branch Model (app/Models/Branch.php)
 
 namespace App\Models;
 
@@ -19,6 +20,7 @@ class Branch extends Model
         'address',
         'phone',
         'email',
+        // 'manager_name', // REMOVED: DB එකේ නෑ
         'is_main_branch',
         'status',
         'settings',
@@ -38,123 +40,97 @@ class Branch extends Model
         'status' => 'active',
     ];
 
-    /**
-     * Get the company that owns the branch
-     */
-    public function company(): BelongsTo
+    // ... rest of the methods remain same
+}
+
+// ===================================================
+
+// 2. CORRECTED Validation Rules (app/Http/Requests/BranchStoreRequest.php)
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class BranchStoreRequest extends FormRequest
+{
+    public function authorize(): bool
     {
-        return $this->belongsTo(Company::class);
+        return $this->user()->can('create branches');
     }
 
-    /**
-     * Get the branch's users
-     */
-    public function users(): HasMany
+    public function rules(): array
     {
-        return $this->hasMany(User::class);
+        return [
+            'company_id' => ['required', 'exists:companies,id'],
+            'name' => ['required', 'string', 'max:255'],
+            'code' => [
+                'required',
+                'string',
+                'max:255',
+                'alpha_num',
+                'uppercase',
+                Rule::unique('branches', 'code')->where(function ($query) {
+                    return $query->where('company_id', $this->company_id);
+                })
+            ],
+            'address' => ['nullable', 'string'],
+            'phone' => ['nullable', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            // 'manager_name' => ['nullable', 'string', 'max:255'], // REMOVED
+            'is_main_branch' => ['boolean'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'status' => ['nullable', 'in:active,inactive'],
+        ];
     }
 
-    /**
-     * Get the branch's customers
-     */
-    public function customers(): HasMany
+    public function messages(): array
     {
-        return $this->hasMany(Customer::class);
+        return [
+            'company_id.required' => 'Please select a company.',
+            'company_id.exists' => 'Selected company does not exist.',
+            'name.required' => 'Branch name is required.',
+            'code.required' => 'Branch code is required.',
+            'code.unique' => 'Branch code must be unique within the company.',
+            'code.alpha_num' => 'Branch code can only contain letters and numbers.',
+            'code.uppercase' => 'Branch code must be in uppercase.',
+            'email.email' => 'Please enter a valid email address.',
+        ];
     }
 
-    /**
-     * Get the branch's invoices
-     */
-    public function invoices(): HasMany
+    public function attributes(): array
     {
-        return $this->hasMany(Invoice::class);
+        return [
+            'company_id' => 'company',
+            'name' => 'branch name',
+            'code' => 'branch code',
+            'is_main_branch' => 'main branch',
+        ];
     }
 
-    /**
-     * Get active users for this branch
-     */
-    public function activeUsers(): HasMany
+    protected function prepareForValidation(): void
     {
-        return $this->users()->where('status', 'active');
-    }
+        if ($this->has('code')) {
+            $this->merge([
+                'code' => strtoupper($this->code),
+            ]);
+        }
 
-    /**
-     * Check if branch is active
-     */
-    public function isActive(): bool
-    {
-        return $this->status === 'active';
-    }
+        if (!$this->has('status')) {
+            $this->merge([
+                'status' => 'active',
+            ]);
+        }
 
-    /**
-     * Check if this is the main branch
-     */
-    public function isMainBranch(): bool
-    {
-        return $this->is_main_branch;
-    }
-
-    /**
-     * Get branch setting by key
-     */
-    public function getSetting(string $key, $default = null)
-    {
-        return $this->settings[$key] ?? $default;
-    }
-
-    /**
-     * Set branch setting
-     */
-    public function setSetting(string $key, $value): void
-    {
-        $settings = $this->settings ?? [];
-        $settings[$key] = $value;
-        $this->update(['settings' => $settings]);
-    }
-
-    /**
-     * Generate invoice number with branch prefix
-     */
-    public function generateInvoiceNumber(): string
-    {
-        $lastInvoice = $this->company->invoices()
-            ->where('branch_id', $this->id)
-            ->latest('id')
-            ->first();
-            
-        $nextNumber = $lastInvoice ? intval(substr($lastInvoice->invoice_number, -6)) + 1 : 1;
-        
-        return $this->code . '-' . str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
-    }
-
-    /**
-     * Scope for active branches
-     */
-    public function scopeActive($query)
-    {
-        return $query->where('status', 'active');
-    }
-
-    /**
-     * Boot method to ensure only one main branch per company
-     */
-    protected static function boot()
-    {
-        parent::boot();
-
-        static::creating(function ($branch) {
-            if ($branch->is_main_branch) {
-                static::where('company_id', $branch->company_id)
-                    ->update(['is_main_branch' => false]);
-            }
-        });
-
-        static::updating(function ($branch) {
-            if ($branch->is_main_branch && $branch->isDirty('is_main_branch')) {
-                static::where('company_id', $branch->company_id)
-                    ->where('id', '!=', $branch->id)
-                    ->update(['is_main_branch' => false]);
-            }
-        });
+        if ($this->has('is_main_branch')) {
+            $this->merge([
+                'is_main_branch' => filter_var($this->is_main_branch, FILTER_VALIDATE_BOOLEAN),
+            ]);
+        } else {
+            $this->merge([
+                'is_main_branch' => false,
+            ]);
+        }
     }
 }

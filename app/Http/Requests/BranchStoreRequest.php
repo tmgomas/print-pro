@@ -9,7 +9,6 @@ class BranchStoreRequest extends FormRequest
 {
     public function authorize(): bool
     {
-       
         return $this->user()->can('create branches');
     }
 
@@ -24,16 +23,17 @@ class BranchStoreRequest extends FormRequest
             'code' => [
                 'required',
                 'string',
-                'max:10',
+                'max:255',
                 'alpha_num',
                 'uppercase',
                 Rule::unique('branches', 'code')->where(function ($query) {
                     return $query->where('company_id', $this->company_id);
                 })
             ],
-            'address' => ['required', 'string', 'max:1000'],
-            'phone' => ['required', 'string', 'max:20'],
-            'manager_name' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string'],
+            'phone' => ['nullable', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'is_main_branch' => ['boolean'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'status' => ['nullable', 'in:active,inactive'],
@@ -53,8 +53,7 @@ class BranchStoreRequest extends FormRequest
             'code.unique' => 'Branch code must be unique within the company.',
             'code.alpha_num' => 'Branch code can only contain letters and numbers.',
             'code.uppercase' => 'Branch code must be in uppercase.',
-            'address.required' => 'Branch address is required.',
-            'phone.required' => 'Branch phone number is required.',
+            'email.email' => 'Please enter a valid email address.',
         ];
     }
 
@@ -67,7 +66,7 @@ class BranchStoreRequest extends FormRequest
             'company_id' => 'company',
             'name' => 'branch name',
             'code' => 'branch code',
-            'manager_name' => 'manager name',
+            'is_main_branch' => 'main branch',
         ];
     }
 
@@ -87,6 +86,17 @@ class BranchStoreRequest extends FormRequest
         if (!$this->has('status')) {
             $this->merge([
                 'status' => 'active',
+            ]);
+        }
+
+        // Handle is_main_branch conversion
+        if ($this->has('is_main_branch')) {
+            $this->merge([
+                'is_main_branch' => filter_var($this->is_main_branch, FILTER_VALIDATE_BOOLEAN),
+            ]);
+        } else {
+            $this->merge([
+                'is_main_branch' => false,
             ]);
         }
     }

@@ -25,6 +25,8 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Create Branch', href: '/branches/create' },
 ];
 
+// Corrected Create.tsx (resources/js/pages/Branches/Create.tsx)
+
 export default function CreateBranch({ companies }: Props) {
     const { data, setData, post, processing, errors, reset } = useForm({
         company_id: '',
@@ -33,7 +35,7 @@ export default function CreateBranch({ companies }: Props) {
         address: '',
         phone: '',
         email: '',
-        manager_name: '',
+        // manager_name: '', // REMOVED: DB එකේ නෑ
         latitude: '',
         longitude: '',
         is_main_branch: false,
@@ -42,10 +44,21 @@ export default function CreateBranch({ companies }: Props) {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // Debug logging
+        console.log('Form submitted with data:', data);
+        console.log('Required fields check:');
+        console.log('- company_id:', data.company_id ? '✓' : '✗ MISSING');
+        console.log('- name:', data.name ? '✓' : '✗ MISSING');
+        console.log('- code:', data.code ? '✓' : '✗ MISSING');
+        
         post('/branches', {
             onSuccess: () => {
-                // Will be redirected by controller
+                console.log('✓ Branch created successfully!');
             },
+            onError: (errors) => {
+                console.log('✗ Validation errors:', errors);
+            }
         });
     };
 
@@ -80,27 +93,37 @@ export default function CreateBranch({ companies }: Props) {
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="company_id">Company *</Label>
+                                        <select
+                                            id="company_id"
+                                            value={data.company_id}
+                                            onChange={(e) => setData('company_id', e.target.value)}
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                                            required
+                                        >
+                                            <option value="">Select a company</option>
+                                            {companies.map((company) => (
+                                                <option key={company.value} value={company.value}>
+                                                    {company.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <InputError message={errors.company_id} />
+                                    </div>
+
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="grid gap-2">
-                                            <Label htmlFor="company_id">Company *</Label>
-                                            <select
-                                                id="company_id"
-                                                value={data.company_id}
-                                                onChange={(e) => setData('company_id', e.target.value)}
-                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                <option value="">Select Company</option>
-                                                {companies && companies.length > 0 ? (
-                                                    companies.map((company) => (
-                                                        <option key={company.value} value={company.value}>
-                                                            {company.label}
-                                                        </option>
-                                                    ))
-                                                ) : (
-                                                    <option value="" disabled>No companies available</option>
-                                                )}
-                                            </select>
-                                            <InputError message={errors.company_id} />
+                                            <Label htmlFor="name">Branch Name *</Label>
+                                            <Input
+                                                id="name"
+                                                type="text"
+                                                value={data.name}
+                                                onChange={(e) => setData('name', e.target.value)}
+                                                placeholder="Enter branch name"
+                                                required
+                                            />
+                                            <InputError message={errors.name} />
                                         </div>
 
                                         <div className="grid gap-2">
@@ -109,26 +132,11 @@ export default function CreateBranch({ companies }: Props) {
                                                 id="code"
                                                 type="text"
                                                 value={data.code}
-                                                onChange={(e) => setData('code', e.target.value.toUpperCase())}
-                                                placeholder="e.g., COL001, KAN002"
-                                                className="uppercase"
+                                                onChange={(e) => setData('code', e.target.value)}
+                                                placeholder="e.g., BR001"
+                                                required
                                             />
                                             <InputError message={errors.code} />
-                                            <p className="text-xs text-muted-foreground">
-                                                Unique branch code for identification and invoice numbering
-                                            </p>
-                                        </div>
-
-                                        <div className="grid gap-2 md:col-span-2">
-                                            <Label htmlFor="name">Branch Name *</Label>
-                                            <Input
-                                                id="name"
-                                                type="text"
-                                                value={data.name}
-                                                onChange={(e) => setData('name', e.target.value)}
-                                                placeholder="e.g., Colombo Main Branch"
-                                            />
-                                            <InputError message={errors.name} />
                                         </div>
                                     </div>
                                 </CardContent>
@@ -144,12 +152,12 @@ export default function CreateBranch({ companies }: Props) {
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <div className="grid gap-2">
-                                        <Label htmlFor="address">Address *</Label>
+                                        <Label htmlFor="address">Address</Label>
                                         <Textarea
                                             id="address"
                                             value={data.address}
                                             onChange={(e) => setData('address', e.target.value)}
-                                            placeholder="Enter complete branch address"
+                                            placeholder="Enter branch address"
                                             rows={3}
                                         />
                                         <InputError message={errors.address} />
@@ -157,40 +165,28 @@ export default function CreateBranch({ companies }: Props) {
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="grid gap-2">
-                                            <Label htmlFor="phone">Phone Number</Label>
+                                            <Label htmlFor="phone">Phone</Label>
                                             <Input
                                                 id="phone"
                                                 type="tel"
                                                 value={data.phone}
                                                 onChange={(e) => setData('phone', e.target.value)}
-                                                placeholder="e.g., +94 11 2345678"
+                                                placeholder="Enter phone number"
                                             />
                                             <InputError message={errors.phone} />
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="email">Email Address</Label>
+                                            <Label htmlFor="email">Email</Label>
                                             <Input
                                                 id="email"
                                                 type="email"
                                                 value={data.email}
                                                 onChange={(e) => setData('email', e.target.value)}
-                                                placeholder="branch@company.com"
+                                                placeholder="Enter email address"
                                             />
                                             <InputError message={errors.email} />
                                         </div>
-                                    </div>
-
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="manager_name">Branch Manager</Label>
-                                        <Input
-                                            id="manager_name"
-                                            type="text"
-                                            value={data.manager_name}
-                                            onChange={(e) => setData('manager_name', e.target.value)}
-                                            placeholder="Manager's full name"
-                                        />
-                                        <InputError message={errors.manager_name} />
                                     </div>
                                 </CardContent>
                             </Card>
@@ -213,7 +209,7 @@ export default function CreateBranch({ companies }: Props) {
                                                 step="any"
                                                 value={data.latitude}
                                                 onChange={(e) => setData('latitude', e.target.value)}
-                                                placeholder="6.9271"
+                                                placeholder="e.g., 6.9271"
                                             />
                                             <InputError message={errors.latitude} />
                                         </div>
@@ -226,24 +222,21 @@ export default function CreateBranch({ companies }: Props) {
                                                 step="any"
                                                 value={data.longitude}
                                                 onChange={(e) => setData('longitude', e.target.value)}
-                                                placeholder="79.8612"
+                                                placeholder="e.g., 79.8612"
                                             />
                                             <InputError message={errors.longitude} />
                                         </div>
                                     </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        GPS coordinates for delivery and location services
-                                    </p>
                                 </CardContent>
                             </Card>
                         </div>
 
                         {/* Sidebar */}
                         <div className="space-y-6">
-                            {/* Branch Settings */}
+                            {/* Settings */}
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Branch Settings</CardTitle>
+                                    <CardTitle>Settings</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <div className="grid gap-2">
@@ -252,14 +245,11 @@ export default function CreateBranch({ companies }: Props) {
                                             id="is_main_branch"
                                             value={data.is_main_branch ? 'true' : 'false'}
                                             onChange={(e) => setData('is_main_branch', e.target.value === 'true')}
-                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                                         >
                                             <option value="false">Regular Branch</option>
                                             <option value="true">Main Branch</option>
                                         </select>
-                                        <p className="text-sm text-muted-foreground">
-                                            Set as the primary branch for this company
-                                        </p>
                                         <InputError message={errors.is_main_branch} />
                                     </div>
 
@@ -269,7 +259,7 @@ export default function CreateBranch({ companies }: Props) {
                                             id="status"
                                             value={data.status}
                                             onChange={(e) => setData('status', e.target.value)}
-                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                                         >
                                             <option value="active">Active</option>
                                             <option value="inactive">Inactive</option>
@@ -279,7 +269,7 @@ export default function CreateBranch({ companies }: Props) {
                                 </CardContent>
                             </Card>
 
-                            {/* Form Actions */}
+                            {/* Submit Actions */}
                             <Card>
                                 <CardContent className="pt-6">
                                     <div className="space-y-4">
