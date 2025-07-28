@@ -16,13 +16,94 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests; // Add this line
 
 class UserManagementController extends Controller
 {
-      use AuthorizesRequests; // Add this line
+     use AuthorizesRequests;
+    
     public function __construct(
         private AuthService $authService,
         private UserRepository $userRepository,
         private CompanyRepository $companyRepository
     ) {}
 
+    /**
+     * Show the form for creating a new user
+     */
+    public function create(): Response
+    {
+        $this->authorize('create users');
+
+        $user = auth()->user();
+        
+        $companies = $user->isSuperAdmin() 
+            ? $this->companyRepository->getActive()->map(fn($c) => ['value' => $c->id, 'label' => $c->name])
+            : [['value' => $user->company_id, 'label' => $user->company->name]];
+
+        $roles = $user->isSuperAdmin()
+            ? \Spatie\Permission\Models\Role::all()->map(fn($r) => ['value' => $r->name, 'label' => $r->name])
+            : \Spatie\Permission\Models\Role::where('name', '!=', 'Super Admin')->get()->map(fn($r) => ['value' => $r->name, 'label' => $r->name]);
+
+        // Fix: Add branches array - initially empty or for user's company
+        $branches = [];
+        if (!$user->isSuperAdmin() && $user->company_id) {
+            $branches = \App\Models\Branch::where('company_id', $user->company_id)
+                ->active()
+                ->select('id', 'name')
+                ->get()
+                ->map(fn($b) => ['value' => $b->id, 'label' => $b->name])
+                ->toArray();
+        }
+       
+        return Inertia::render('Users/Create', [
+            'companies' => $companies,
+            'roles' => $roles,
+            'branches' => $branches, // Fix: This was missing
+            'defaultCompanyId' => $user->isSuperAdmin() ? null : $user->company_id,
+        ]);
+    }
+
+    /**
+     * Store a newly created user
+     */
+    public function store(CreateUserRequest $request): RedirectResponse
+    {
+        try {
+            $user = $this->authService->createUser($request->validated());
+            
+            return redirect()->route('users.show', $user->id)
+                ->with('success', 'User created successfully.');
+                
+        } catch (\Exception $e) {
+            return back()
+                ->withInput()
+                ->withErrors(['error' => 'User creation failed. Please try again.']);
+        }
+    }
+
+    /**
+     * Get branches for a company (AJAX)
+     */
+    public function getBranches(Request $request): JsonResponse
+    {
+        $companyId = $request->get('company_id');
+        
+        if (!$companyId) {
+            return response()->json([]);
+        }
+
+        $user = auth()->user();
+        
+        // Check if user can access this company
+        if (!$user->isSuperAdmin() && $user->company_id != $companyId) {
+            return response()->json([], 403);
+        }
+
+        $branches = \App\Models\Branch::where('company_id', $companyId)
+            ->active()
+            ->select('id', 'name')
+            ->get()
+            ->map(fn($b) => ['value' => $b->id, 'label' => $b->name]);
+
+        return response()->json($branches);
+    }
     /**
      * Display a listing of users
      */
@@ -87,45 +168,12 @@ class UserManagementController extends Controller
     /**
      * Show the form for creating a new user
      */
-    public function create(): Response
-    {
-        $this->authorize('create users');
-
-        $user = auth()->user();
-        
-        $companies = $user->isSuperAdmin() 
-            ? $this->companyRepository->getActive()->map(fn($c) => ['value' => $c->id, 'label' => $c->name])
-            : [['value' => $user->company_id, 'label' => $user->company->name]];
-
-        $roles = $user->isSuperAdmin()
-            ? \Spatie\Permission\Models\Role::all()->map(fn($r) => ['value' => $r->name, 'label' => $r->name])
-            : \Spatie\Permission\Models\Role::where('name', '!=', 'Super Admin')->get()->map(fn($r) => ['value' => $r->name, 'label' => $r->name]);
-
-        return Inertia::render('Users/Create', [
-            'companies' => $companies,
-            'roles' => $roles,
-            'defaultCompanyId' => $user->isSuperAdmin() ? null : $user->company_id,
-        ]);
-    }
+   
 
     /**
      * Store a newly created user
      */
-    public function store(CreateUserRequest $request): RedirectResponse
-    {
-        try {
-            $user = $this->authService->createUser($request->validated());
-            
-            return redirect()->route('users.show', $user->id)
-                ->with('success', 'User created successfully.');
-                
-        } catch (\Exception $e) {
-            return back()
-                ->withInput()
-                ->withErrors(['error' => 'User creation failed. Please try again.']);
-        }
-    }
-
+   
     /**
      * Display the specified user
      */
@@ -366,29 +414,7 @@ class UserManagementController extends Controller
     /**
      * Get branches for a company (AJAX)
      */
-    public function getBranches(Request $request): JsonResponse
-    {
-        $companyId = $request->get('company_id');
-        
-        if (!$companyId) {
-            return response()->json([]);
-        }
-
-        $user = auth()->user();
-        
-        // Check if user can access this company
-        if (!$user->isSuperAdmin() && $user->company_id != $companyId) {
-            return response()->json([], 403);
-        }
-
-        $branches = \App\Models\Branch::where('company_id', $companyId)
-            ->active()
-            ->select('id', 'name')
-            ->get()
-            ->map(fn($b) => ['value' => $b->id, 'label' => $b->name]);
-
-        return response()->json($branches);
-    }
+ 
 
     /**
      * Search users (AJAX)

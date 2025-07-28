@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { useState, useEffect } from 'react';
+import { Head, Link, useForm, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import { BreadcrumbItem } from '@/types';
 interface Props {
     companies: Array<{ value: string; label: string }>;
     roles: Array<{ value: string; label: string }>;
-    branches: Array<{ value: string; label: string }>;
+    branches?: Array<{ value: string; label: string; company_id?: string | number }>; // Make optional and add company_id
     defaultCompanyId?: string | number;
 }
 
@@ -22,8 +22,10 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Create User', href: '/users/create' },
 ];
 
-export default function CreateUser({ companies, roles, branches, defaultCompanyId }: Props) {
+export default function CreateUser({ companies, roles, branches = [], defaultCompanyId }: Props) {
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [availableBranches, setAvailableBranches] = useState(branches || []);
+    const [loadingBranches, setLoadingBranches] = useState(false);
 
     const { data, setData, post, processing, errors, reset } = useForm({
         first_name: '',
@@ -49,6 +51,25 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
         });
     };
 
+    // Load branches when company changes
+    useEffect(() => {
+        if (data.company_id) {
+            setLoadingBranches(true);
+            fetch(`/users/get-branches?company_id=${data.company_id}`)
+                .then(response => response.json())
+                .then(branches => {
+                    setAvailableBranches(branches);
+                    setLoadingBranches(false);
+                })
+                .catch(() => {
+                    setAvailableBranches([]);
+                    setLoadingBranches(false);
+                });
+        } else {
+            setAvailableBranches([]);
+        }
+    }, [data.company_id]);
+
     const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -59,9 +80,15 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
         }
     };
 
-    const availableBranches = branches.filter(branch => 
-        !data.company_id || branch.company_id == data.company_id
-    );
+    const handleCompanyChange = (companyId: string) => {
+        setData('company_id', companyId);
+        setData('branch_id', ''); // Reset branch when company changes
+    };
+
+    // Fix: Remove the original filter logic since we're using state
+    // const availableBranches = branches?.filter(branch => 
+    //     !data.company_id || branch.company_id == data.company_id
+    // ) || [];
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -100,6 +127,7 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                             type="text"
                                             value={data.first_name}
                                             onChange={(e) => setData('first_name', e.target.value)}
+                                            placeholder="Enter first name"
                                             required
                                         />
                                         <InputError message={errors.first_name} />
@@ -112,30 +140,33 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                             type="text"
                                             value={data.last_name}
                                             onChange={(e) => setData('last_name', e.target.value)}
+                                            placeholder="Enter last name"
                                             required
                                         />
                                         <InputError message={errors.last_name} />
                                     </div>
 
                                     <div className="grid gap-2">
-                                        <Label htmlFor="email">Email Address *</Label>
+                                        <Label htmlFor="email">Email *</Label>
                                         <Input
                                             id="email"
                                             type="email"
                                             value={data.email}
                                             onChange={(e) => setData('email', e.target.value)}
+                                            placeholder="Enter email address"
                                             required
                                         />
                                         <InputError message={errors.email} />
                                     </div>
 
                                     <div className="grid gap-2">
-                                        <Label htmlFor="phone">Phone Number</Label>
+                                        <Label htmlFor="phone">Phone</Label>
                                         <Input
                                             id="phone"
                                             type="tel"
                                             value={data.phone}
                                             onChange={(e) => setData('phone', e.target.value)}
+                                            placeholder="Enter phone number"
                                         />
                                         <InputError message={errors.phone} />
                                     </div>
@@ -150,10 +181,7 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                         <select
                                             id="company_id"
                                             value={data.company_id}
-                                            onChange={(e) => {
-                                                setData('company_id', e.target.value);
-                                                setData('branch_id', ''); // Reset branch
-                                            }}
+                                            onChange={(e) => handleCompanyChange(e.target.value)}
                                             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                                             required
                                         >
@@ -173,10 +201,12 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                             id="branch_id"
                                             value={data.branch_id}
                                             onChange={(e) => setData('branch_id', e.target.value)}
-                                            disabled={!availableBranches.length}
                                             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                            disabled={!data.company_id || loadingBranches}
                                         >
-                                            <option value="">Select Branch</option>
+                                            <option value="">
+                                                {loadingBranches ? 'Loading branches...' : 'Select Branch'}
+                                            </option>
                                             {availableBranches.map((branch) => (
                                                 <option key={branch.value} value={branch.value}>
                                                     {branch.label}
@@ -206,12 +236,13 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                     </div>
 
                                     <div className="grid gap-2">
-                                        <Label htmlFor="status">Status</Label>
+                                        <Label htmlFor="status">Status *</Label>
                                         <select
                                             id="status"
                                             value={data.status}
                                             onChange={(e) => setData('status', e.target.value)}
                                             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                            required
                                         >
                                             <option value="active">Active</option>
                                             <option value="inactive">Inactive</option>
@@ -221,9 +252,9 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                 </div>
                             </div>
 
-                            {/* Security Section */}
-                            <div className="border-t pt-6">
-                                <h3 className="text-lg font-medium mb-4">Security</h3>
+                            {/* Security Information */}
+                            <div className="space-y-4">
+                                <h3 className="text-lg font-medium">Security</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div className="grid gap-2">
                                         <Label htmlFor="password">Password *</Label>
@@ -232,6 +263,7 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                             type="password"
                                             value={data.password}
                                             onChange={(e) => setData('password', e.target.value)}
+                                            placeholder="Enter password"
                                             required
                                         />
                                         <InputError message={errors.password} />
@@ -244,6 +276,7 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                             type="password"
                                             value={data.password_confirmation}
                                             onChange={(e) => setData('password_confirmation', e.target.value)}
+                                            placeholder="Confirm password"
                                             required
                                         />
                                         <InputError message={errors.password_confirmation} />
@@ -251,45 +284,33 @@ export default function CreateUser({ companies, roles, branches, defaultCompanyI
                                 </div>
                             </div>
 
-                            {/* Avatar Section */}
-                            <div className="border-t pt-6">
-                                <h3 className="text-lg font-medium mb-4">Profile Picture</h3>
+                            {/* Avatar Upload */}
+                            <div className="space-y-4">
+                                <h3 className="text-lg font-medium">Profile Picture</h3>
                                 <div className="flex items-center gap-6">
-                                    <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                                        {avatarPreview ? (
-                                            <img src={avatarPreview} alt="Avatar preview" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <span className="text-2xl text-muted-foreground">
-                                                {data.first_name.charAt(0).toUpperCase()}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <input
-                                            type="file"
+                                    {avatarPreview && (
+                                        <img
+                                            src={avatarPreview}
+                                            alt="Avatar preview"
+                                            className="h-20 w-20 rounded-full object-cover"
+                                        />
+                                    )}
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="avatar">Avatar</Label>
+                                        <Input
                                             id="avatar"
+                                            type="file"
                                             accept="image/*"
                                             onChange={handleAvatarChange}
-                                            className="hidden"
                                         />
-                                        <Button 
-                                            type="button" 
-                                            variant="outline"
-                                            onClick={() => document.getElementById('avatar')?.click()}
-                                        >
-                                            Choose File
-                                        </Button>
-                                        <p className="text-sm text-muted-foreground mt-1">
-                                            JPG, PNG up to 2MB
-                                        </p>
+                                        <InputError message={errors.avatar} />
                                     </div>
                                 </div>
-                                <InputError message={errors.avatar} />
                             </div>
 
-                            {/* Actions */}
-                            <div className="flex justify-end gap-4 pt-6 border-t">
-                                <Button type="button" variant="outline" asChild>
+                            {/* Submit Button */}
+                            <div className="flex justify-end gap-4">
+                                <Button variant="outline" asChild>
                                     <Link href="/users">Cancel</Link>
                                 </Button>
                                 <Button type="submit" disabled={processing}>

@@ -100,7 +100,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('users/{user}/deactivate', [UserManagementController::class, 'deactivate'])->name('users.deactivate');
     Route::post('users/{user}/suspend', [UserManagementController::class, 'suspend'])->name('users.suspend');
     Route::post('users/bulk-action', [UserManagementController::class, 'bulkAction'])->name('users.bulk-action');   
-    });
+    Route::get('users/get-branches', [UserManagementController::class, 'getBranches'])->name('users.get-branches');
+    
+});
 
     /*
     |--------------------------------------------------------------------------
