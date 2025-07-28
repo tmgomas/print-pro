@@ -94,15 +94,18 @@ Route::middleware(['auth'])->group(function () {
     | User Management Routes
     |--------------------------------------------------------------------------
     */
-    Route::middleware('permission:manage users')->group(function () {
+    // routes/web.php - Line 90-99 wala
+Route::middleware('permission:manage users')->group(function () {
     Route::resource('users', UserManagementController::class);
     Route::post('users/{user}/activate', [UserManagementController::class, 'activate'])->name('users.activate');
     Route::post('users/{user}/deactivate', [UserManagementController::class, 'deactivate'])->name('users.deactivate');
     Route::post('users/{user}/suspend', [UserManagementController::class, 'suspend'])->name('users.suspend');
     Route::post('users/bulk-action', [UserManagementController::class, 'bulkAction'])->name('users.bulk-action');   
-    Route::get('users/get-branches', [UserManagementController::class, 'getBranches'])->name('users.get-branches');
     
+    // MOVE THIS ABOVE the resource route
+    Route::get('ajax/branches', [UserManagementController::class, 'getBranches'])->name('ajax.branches');
 });
+
 
     /*
     |--------------------------------------------------------------------------

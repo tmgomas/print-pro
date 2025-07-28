@@ -55,7 +55,7 @@ export default function CreateUser({ companies, roles, branches = [], defaultCom
     useEffect(() => {
         if (data.company_id) {
             setLoadingBranches(true);
-            fetch(`/users/get-branches?company_id=${data.company_id}`)
+            fetch(`/ajax/branches?company_id=${data.company_id}`)
                 .then(response => response.json())
                 .then(branches => {
                     setAvailableBranches(branches);
