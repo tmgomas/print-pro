@@ -23,7 +23,7 @@ class BranchRepository extends BaseRepository
             $query->where('company_id', $companyId);
         }
         
-        return $query->orderBy('branch_name')->get(['id', 'branch_name', 'branch_code']);
+        return $query->orderBy('name')->get(['id', 'name', 'code']); // FIXED: column names
     }
 
     /**
@@ -35,8 +35,8 @@ class BranchRepository extends BaseRepository
 
         if ($search) {
             $query->where(function ($q) use ($search) {
-                $q->where('branch_name', 'LIKE', "%{$search}%")
-                  ->orWhere('branch_code', 'LIKE', "%{$search}%")
+                $q->where('name', 'LIKE', "%{$search}%")     // FIXED: column name
+                  ->orWhere('code', 'LIKE', "%{$search}%")   // FIXED: column name
                   ->orWhere('phone', 'LIKE', "%{$search}%");
             });
         }
@@ -57,7 +57,7 @@ class BranchRepository extends BaseRepository
      */
     public function codeExists(string $branchCode, ?int $excludeId = null): bool
     {
-        $query = $this->model->where('branch_code', $branchCode);
+        $query = $this->model->where('code', $branchCode); // FIXED: column name
         
         if ($excludeId) {
             $query->where('id', '!=', $excludeId);
@@ -116,7 +116,7 @@ class BranchRepository extends BaseRepository
     public function getByCompany(int $companyId): Collection
     {
         return $this->model->where('company_id', $companyId)
-                          ->orderBy('branch_name')
+                          ->orderBy('name') // FIXED: column name
                           ->get();
     }
 
@@ -134,5 +134,13 @@ class BranchRepository extends BaseRepository
     public function hasInvoices(int $branchId): bool
     {
         return $this->model->find($branchId)->invoices()->exists();
+    }
+
+    /**
+     * Find branch with statistics
+     */
+    public function findWithStats(int $id): ?Branch
+    {
+        return $this->model->with(['company', 'users'])->find($id);
     }
 }

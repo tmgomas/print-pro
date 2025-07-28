@@ -9,14 +9,14 @@ class BranchStoreRequest extends FormRequest
 {
     public function authorize(): bool
     {
+       
         return $this->user()->can('create branches');
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     */
     public function rules(): array
     {
+       
+        
         return [
             'company_id' => ['required', 'exists:companies,id'],
             'name' => ['required', 'string', 'max:255'],
@@ -40,41 +40,10 @@ class BranchStoreRequest extends FormRequest
         ];
     }
 
-    /**
-     * Get custom messages for validator errors.
-     */
-    public function messages(): array
-    {
-        return [
-            'company_id.required' => 'Please select a company.',
-            'company_id.exists' => 'Selected company does not exist.',
-            'name.required' => 'Branch name is required.',
-            'code.required' => 'Branch code is required.',
-            'code.unique' => 'Branch code must be unique within the company.',
-            'code.alpha_num' => 'Branch code can only contain letters and numbers.',
-            'code.uppercase' => 'Branch code must be in uppercase.',
-            'email.email' => 'Please enter a valid email address.',
-        ];
-    }
-
-    /**
-     * Get custom attribute names for error messages.
-     */
-    public function attributes(): array
-    {
-        return [
-            'company_id' => 'company',
-            'name' => 'branch name',
-            'code' => 'branch code',
-            'is_main_branch' => 'main branch',
-        ];
-    }
-
-    /**
-     * Prepare the data for validation.
-     */
     protected function prepareForValidation(): void
     {
+       
+        
         // Convert branch code to uppercase if provided
         if ($this->has('code')) {
             $this->merge([
@@ -99,5 +68,42 @@ class BranchStoreRequest extends FormRequest
                 'is_main_branch' => false,
             ]);
         }
+
+        
+    }
+
+    public function messages(): array
+    {
+       
+        
+        return [
+            'company_id.required' => 'Please select a company.',
+            'company_id.exists' => 'Selected company does not exist.',
+            'name.required' => 'Branch name is required.',
+            'code.required' => 'Branch code is required.',
+            'code.unique' => 'Branch code must be unique within the company.',
+            'code.alpha_num' => 'Branch code can only contain letters and numbers.',
+            'code.uppercase' => 'Branch code must be in uppercase.',
+            'email.email' => 'Please enter a valid email address.',
+        ];
+    }
+
+    public function attributes(): array
+    {
+      
+        return [
+            'company_id' => 'company',
+            'name' => 'branch name',
+            'code' => 'branch code',
+            'is_main_branch' => 'main branch',
+        ];
+    }
+
+    // Override validated method to see what data passes validation
+    public function validated($key = null, $default = null)
+    {
+        $validated = parent::validated($key, $default);
+        
+        return $validated;
     }
 }
