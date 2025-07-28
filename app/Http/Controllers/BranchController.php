@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\BranchCreateRequest;
+use App\Http\Requests\BranchStoreRequest;
 use App\Http\Requests\BranchUpdateRequest;
 use App\Services\BranchService;
 use App\Repositories\BranchRepository;
@@ -42,7 +42,7 @@ class BranchController extends Controller
         'companies' => $companies->map(function ($company) {
             return [
                 'value' => $company->id,
-                'label' => $company->company_name . ' (' . $company->company_code . ')',
+                'label' => $company->name . ' (' . $company->registration_number . ')',
             ];
         })->toArray(),
     ]);
@@ -50,7 +50,7 @@ class BranchController extends Controller
     /**
      * Store a newly created branch
      */
-    public function store(BranchCreateRequest $request): RedirectResponse
+    public function store(BranchStoreRequest $request): RedirectResponse
     {
         try {
             $branch = $this->branchService->createBranch($request->validated());

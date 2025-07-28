@@ -7,11 +7,9 @@ use Illuminate\Validation\Rule;
 
 class BranchStoreRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
+       
         return $this->user()->can('create branches');
     }
 
@@ -28,18 +26,17 @@ class BranchStoreRequest extends FormRequest
                 'string',
                 'max:10',
                 'alpha_num',
-                Rule::unique('branches')->where(function ($query) {
+                'uppercase',
+                Rule::unique('branches', 'code')->where(function ($query) {
                     return $query->where('company_id', $this->company_id);
                 })
             ],
-            'address' => ['required', 'string'],
+            'address' => ['required', 'string', 'max:1000'],
             'phone' => ['required', 'string', 'max:20'],
-            'email' => ['required', 'email', 'unique:branches,email'],
-            'is_main_branch' => ['boolean'],
-            'status' => ['in:active,inactive'],
+            'manager_name' => ['nullable', 'string', 'max:255'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'settings' => ['nullable', 'array'],
+            'status' => ['nullable', 'in:active,inactive'],
         ];
     }
 
@@ -51,9 +48,46 @@ class BranchStoreRequest extends FormRequest
         return [
             'company_id.required' => 'Please select a company.',
             'company_id.exists' => 'Selected company does not exist.',
+            'name.required' => 'Branch name is required.',
+            'code.required' => 'Branch code is required.',
             'code.unique' => 'Branch code must be unique within the company.',
             'code.alpha_num' => 'Branch code can only contain letters and numbers.',
-            'email.unique' => 'This email address is already in use.',
+            'code.uppercase' => 'Branch code must be in uppercase.',
+            'address.required' => 'Branch address is required.',
+            'phone.required' => 'Branch phone number is required.',
         ];
+    }
+
+    /**
+     * Get custom attribute names for error messages.
+     */
+    public function attributes(): array
+    {
+        return [
+            'company_id' => 'company',
+            'name' => 'branch name',
+            'code' => 'branch code',
+            'manager_name' => 'manager name',
+        ];
+    }
+
+    /**
+     * Prepare the data for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        // Convert branch code to uppercase if provided
+        if ($this->has('code')) {
+            $this->merge([
+                'code' => strtoupper($this->code),
+            ]);
+        }
+
+        // Set default status if not provided
+        if (!$this->has('status')) {
+            $this->merge([
+                'status' => 'active',
+            ]);
+        }
     }
 }
