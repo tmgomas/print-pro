@@ -112,6 +112,7 @@ class ProductController extends Controller
      */
     public function store(CreateProductRequest $request): RedirectResponse
     {
+        dd('hi');
         try {
             $data = $request->validated();
             $data['company_id'] = auth()->user()->company_id;
