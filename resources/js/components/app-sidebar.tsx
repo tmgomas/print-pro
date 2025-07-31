@@ -23,6 +23,14 @@ const mainNavItems: NavItem[] = [
         href: '/companies',
         icon: Building,
     },
+
+    {
+        title: 'branch Management',
+        href: '/branches',
+        icon: Building,
+    },
+
+    
 ];
 
 const footerNavItems: NavItem[] = [
