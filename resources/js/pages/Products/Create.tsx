@@ -199,13 +199,22 @@ export default function ProductCreate({ categories = [], pricingTiers = [] }: Pr
     };
 
     const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        post('/products', {
-            onSuccess: () => {
-                // Handle success
-            },
-        });
-    };
+    e.preventDefault();
+    
+    // Debug logging
+    console.log('Form Data:', data);
+    
+    post('/products', {
+        forceFormData: true, // For image upload
+        onSuccess: () => {
+            // Redirect to products list
+            window.location.href = '/products';
+        },
+        onError: (errors) => {
+            console.log('Validation errors:', errors);
+        },
+    });
+};
 
     const getCategoryDisplayName = (category: ProductCategory): string => {
         const indent = '—'.repeat((category.level || 0));

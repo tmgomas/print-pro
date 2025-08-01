@@ -110,9 +110,8 @@ class ProductController extends Controller
     /**
      * Store a newly created product
      */
-    public function store(CreateProductRequest $request): RedirectResponse
+public function store(CreateProductRequest $request): RedirectResponse
 {
-    // dd('hi'); <-- මේක remove කරන්න
     try {
         $data = $request->validated();
         $data['company_id'] = auth()->user()->company_id;
