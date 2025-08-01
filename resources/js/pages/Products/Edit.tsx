@@ -1,7 +1,5 @@
-// ===============================
 // resources/js/pages/Products/Edit.tsx
-// Product Catalog System - Edit Page - Complete
-// ===============================
+// Complete Product Edit Form with Validation
 
 import { useState, useEffect } from 'react';
 import { Head, Link, useForm } from '@inertiajs/react';
@@ -11,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Select,
     SelectContent,
@@ -32,7 +31,9 @@ import {
     Image as ImageIcon,
     X,
     Plus,
-    Trash2
+    Trash2,
+    Star,
+    Loader2
 } from 'lucide-react';
 import { BreadcrumbItem } from '@/types';
 
@@ -44,6 +45,7 @@ interface Product {
     name: string;
     description?: string;
     base_price: number;
+    unit_type?: string;
     weight_per_unit: number;
     weight_unit: 'kg' | 'g' | 'lb' | 'oz';
     tax_rate: number;
@@ -74,19 +76,9 @@ interface ProductCategory {
     level?: number;
 }
 
-interface WeightPricingTier {
-    id: number;
-    tier_name: string;
-    min_weight: number;
-    max_weight?: number;
-    base_price: number;
-    per_kg_rate?: number;
-}
-
 interface Props {
     product: Product;
     categories?: ProductCategory[];
-    pricingTiers?: WeightPricingTier[];
 }
 
 interface ProductFormData {
@@ -120,7 +112,11 @@ interface Specification {
     value: string;
 }
 
-export default function ProductEdit({ product, categories = [], pricingTiers = [] }: Props) {
+interface ValidationErrors {
+    [key: string]: string;
+}
+
+export default function ProductEdit({ product, categories = [] }: Props) {
     const [imagePreview, setImagePreview] = useState<string | null>(product.image_url || null);
     const [specifications, setSpecifications] = useState<Specification[]>(() => {
         if (product.specifications && typeof product.specifications === 'object') {
@@ -131,6 +127,7 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
         }
         return [{ key: '', value: '' }];
     });
+    const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
     const [priceCalculation, setPriceCalculation] = useState<any>(null);
 
     const breadcrumbs: BreadcrumbItem[] = [
@@ -141,16 +138,16 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
     ];
 
     const { data, setData, put, processing, errors } = useForm<ProductFormData>({
-        category_id: product.category_id,
-        name: product.name,
-        product_code: product.product_code,
+        category_id: product.category_id || 0,
+        name: product.name || '',
+        product_code: product.product_code || '',
         description: product.description || '',
-        base_price: product.base_price.toString(),
-        unit_type: 'piece', // Default unit type - you may need to add this to your Product interface
-        weight_per_unit: product.weight_per_unit.toString(),
-        weight_unit: product.weight_unit,
-        tax_rate: product.tax_rate.toString(),
-        status: product.status,
+        base_price: product.base_price?.toString() || '0',
+        unit_type: product.unit_type || 'piece',
+        weight_per_unit: product.weight_per_unit?.toString() || '0',
+        weight_unit: product.weight_unit || 'kg',
+        tax_rate: product.tax_rate?.toString() || '0',
+        status: product.status || 'active',
         specifications: product.specifications || {},
         requires_customization: product.requires_customization || false,
         customization_options: product.customization_options || '',
@@ -165,6 +162,58 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
         meta_description: product.meta_description || '',
         image: null,
     });
+
+    // Frontend Validation Function
+    const validateForm = (): boolean => {
+        const newErrors: ValidationErrors = {};
+        
+        // Required field validations
+        if (!data.name.trim()) {
+            newErrors.name = 'නිෂ්පාදන නාමය අවශ්‍යයි / Product name is required';
+        }
+        
+        if (!data.category_id || data.category_id === 0) {
+            newErrors.category_id = 'නිෂ්පාදන කාණ්ඩය අවශ්‍යයි / Product category is required';
+        }
+        
+        if (!data.base_price || parseFloat(data.base_price) <= 0) {
+            newErrors.base_price = 'මූලික මිල අවශ්‍යයි / Base price is required';
+        }
+        
+        if (!data.unit_type) {
+            newErrors.unit_type = 'ඒකක වර්ගය අවශ්‍යයි / Unit type is required';
+        }
+        
+        if (!data.weight_per_unit || parseFloat(data.weight_per_unit) <= 0) {
+            newErrors.weight_per_unit = 'ඒකකයක බර අවශ්‍යයි / Weight per unit is required';
+        }
+        
+        if (!data.weight_unit) {
+            newErrors.weight_unit = 'බර ඒකකය අවශ්‍යයි / Weight unit is required';
+        }
+        
+        if (!data.status) {
+            newErrors.status = 'තත්ත්වය අවශ්‍යයි / Status is required';
+        }
+
+        // Price validation
+        if (data.base_price && (isNaN(parseFloat(data.base_price)) || parseFloat(data.base_price) < 0.01)) {
+            newErrors.base_price = 'මූලික මිල වලංගු අගයක් විය යුතුයි / Base price must be a valid amount';
+        }
+
+        // Weight validation
+        if (data.weight_per_unit && (isNaN(parseFloat(data.weight_per_unit)) || parseFloat(data.weight_per_unit) < 0.001)) {
+            newErrors.weight_per_unit = 'බර වලංගු අගයක් විය යුතුයි / Weight must be a valid amount';
+        }
+
+        // Tax rate validation
+        if (data.tax_rate && (isNaN(parseFloat(data.tax_rate)) || parseFloat(data.tax_rate) < 0 || parseFloat(data.tax_rate) > 100)) {
+            newErrors.tax_rate = 'බදු අනුපාතය 0-100% අතර විය යුතුයි / Tax rate must be between 0-100%';
+        }
+        
+        setValidationErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
 
     // Calculate pricing when quantity or weight changes
     useEffect(() => {
@@ -182,35 +231,28 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
                           data.weight_unit === 'lb' ? weight * 0.453592 :
                           data.weight_unit === 'oz' ? weight * 0.0283495 : weight;
         
-        // Find applicable pricing tier
-        const tier = pricingTiers.find(t => 
-            weightInKg >= t.min_weight && 
-            (t.max_weight === null || weightInKg <= (t.max_weight || Infinity))
-        );
-
-        let deliveryCharge = 0;
-        if (tier) {
-            deliveryCharge = tier.base_price + (tier.per_kg_rate ? (weightInKg * tier.per_kg_rate) : 0);
-        }
-
-        const taxAmount = (price + deliveryCharge) * (parseFloat(data.tax_rate) / 100);
-        const totalAmount = price + deliveryCharge + taxAmount;
+        const taxAmount = (price * parseFloat(data.tax_rate || '0')) / 100;
+        const totalPrice = price + taxAmount;
 
         setPriceCalculation({
-            base_price: price,
-            delivery_charge: deliveryCharge,
-            tax_amount: taxAmount,
-            total_amount: totalAmount,
-            tier_used: tier?.tier_name || 'No tier found',
-            weight_display: `${weight} ${data.weight_unit}`
+            basePrice: price,
+            weight: weightInKg,
+            taxAmount,
+            totalPrice,
+            quantity
         });
     };
 
+    // Handle image upload
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            setData('image', file);
+            if (file.size > 3 * 1024 * 1024) { // 3MB limit
+                alert('රූප ප්‍රමාණය 3MB ට වඩා වැඩි විය නොහැක / Image size cannot exceed 3MB');
+                return;
+            }
             
+            setData('image', file);
             const reader = new FileReader();
             reader.onload = (e) => {
                 setImagePreview(e.target?.result as string);
@@ -219,17 +261,16 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
         }
     };
 
-    const removeImage = () => {
-        setData('image', null);
-        setImagePreview(product.image_url || null);
+    // Handle specifications
+    const addSpecification = () => {
+        setSpecifications([...specifications, { key: '', value: '' }]);
     };
 
-    const handleSpecificationChange = (index: number, field: 'key' | 'value', value: string) => {
+    const updateSpecification = (index: number, field: 'key' | 'value', value: string) => {
         const newSpecs = [...specifications];
         newSpecs[index][field] = value;
         setSpecifications(newSpecs);
         
-        // Update form data
         const specsObject = newSpecs.reduce((acc, spec) => {
             if (spec.key && spec.value) {
                 acc[spec.key] = spec.value;
@@ -238,10 +279,6 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
         }, {} as Record<string, any>);
         
         setData('specifications', specsObject);
-    };
-
-    const addSpecification = () => {
-        setSpecifications([...specifications, { key: '', value: '' }]);
     };
 
     const removeSpecification = (index: number) => {
@@ -263,7 +300,25 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
+        // Clear previous validation errors
+        setValidationErrors({});
+        
+        // Validate form
+        if (!validateForm()) {
+            return;
+        }
+        
+        // Prepare form data with proper types
+        const formData = {
+            ...data,
+            category_id: Number(data.category_id),
+            base_price: parseFloat(data.base_price) || 0,
+            weight_per_unit: parseFloat(data.weight_per_unit) || 0,
+            tax_rate: parseFloat(data.tax_rate) || 0,
+        };
+        
         put(`/products/${product.id}`, {
+            data: formData,
             forceFormData: true,
             onSuccess: () => {
                 // Redirect will be handled by the backend
@@ -308,7 +363,7 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
                             No product categories found. Please create categories first before editing products.
-                            <Link href="/product-categories/create" className="ml-2 text-blue-600 hover:underline">
+                            <Link href="/product-categories/create" className="ml-2 underline">
                                 Create Category
                             </Link>
                         </AlertDescription>
@@ -317,57 +372,48 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Left Column - Main Product Info */}
+                        {/* Left Column - Main Information */}
                         <div className="lg:col-span-2 space-y-6">
                             {/* Basic Information */}
                             <Card>
                                 <CardHeader>
                                     <CardTitle className="flex items-center">
                                         <Package className="w-5 h-5 mr-2" />
-                                        Basic Information
+                                        Basic Information / මූලික තොරතුරු
                                     </CardTitle>
-                                    <CardDescription>
-                                        Essential product details and identification
-                                    </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <Label htmlFor="name">Product Name *</Label>
-                                            <Input
-                                                id="name"
-                                                type="text"
-                                                value={data.name}
-                                                onChange={(e) => setData('name', e.target.value)}
-                                                className={errors.name ? 'border-red-500' : ''}
-                                                placeholder="Enter product name"
-                                                required
-                                            />
-                                            <InputError message={errors.name} />
-                                        </div>
-
-                                        <div>
-                                            <Label htmlFor="product_code">Product Code</Label>
-                                            <Input
-                                                id="product_code"
-                                                type="text"
-                                                value={data.product_code}
-                                                onChange={(e) => setData('product_code', e.target.value)}
-                                                className={errors.product_code ? 'border-red-500' : ''}
-                                                placeholder="Auto-generated if empty"
-                                            />
-                                            <InputError message={errors.product_code} />
-                                        </div>
+                                    {/* Product Name */}
+                                    <div>
+                                        <Label htmlFor="name">
+                                            Product Name / නිෂ්පාදන නාමය <span className="text-red-500">*</span>
+                                        </Label>
+                                        <Input
+                                            id="name"
+                                            type="text"
+                                            placeholder="Enter product name / නිෂ්පාදන නාමය ඇතුළත් කරන්න"
+                                            value={data.name}
+                                            onChange={(e) => setData('name', e.target.value)}
+                                            className={validationErrors.name || errors.name ? 'border-red-500' : ''}
+                                            required
+                                        />
+                                        {validationErrors.name && (
+                                            <p className="text-sm text-red-600 mt-1">{validationErrors.name}</p>
+                                        )}
+                                        <InputError message={errors.name} />
                                     </div>
 
+                                    {/* Category */}
                                     <div>
-                                        <Label htmlFor="category_id">Category *</Label>
+                                        <Label htmlFor="category_id">
+                                            Category / කාණ්ඩය <span className="text-red-500">*</span>
+                                        </Label>
                                         <Select 
                                             value={data.category_id.toString()} 
                                             onValueChange={(value) => setData('category_id', parseInt(value))}
                                         >
-                                            <SelectTrigger className={errors.category_id ? 'border-red-500' : ''}>
-                                                <SelectValue placeholder="Select a category" />
+                                            <SelectTrigger className={validationErrors.category_id || errors.category_id ? 'border-red-500' : ''}>
+                                                <SelectValue placeholder="Select category / කාණ්ඩය තෝරන්න" />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {categories.map((category) => (
@@ -377,37 +423,42 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
                                                 ))}
                                             </SelectContent>
                                         </Select>
+                                        {validationErrors.category_id && (
+                                            <p className="text-sm text-red-600 mt-1">{validationErrors.category_id}</p>
+                                        )}
                                         <InputError message={errors.category_id} />
                                     </div>
 
+                                    {/* Product Code */}
                                     <div>
-                                        <Label htmlFor="description">Description</Label>
+                                        <Label htmlFor="product_code">
+                                            Product Code / නිෂ්පාදන කේතය
+                                        </Label>
+                                        <Input
+                                            id="product_code"
+                                            type="text"
+                                            placeholder="Enter product code / නිෂ්පාදන කේතය ඇතුළත් කරන්න"
+                                            value={data.product_code}
+                                            onChange={(e) => setData('product_code', e.target.value)}
+                                            className={errors.product_code ? 'border-red-500' : ''}
+                                        />
+                                        <InputError message={errors.product_code} />
+                                    </div>
+
+                                    {/* Description */}
+                                    <div>
+                                        <Label htmlFor="description">
+                                            Description / විස්තරය
+                                        </Label>
                                         <Textarea
                                             id="description"
+                                            placeholder="Enter product description / නිෂ්පාදන විස්තරය ඇතුළත් කරන්න"
                                             value={data.description}
                                             onChange={(e) => setData('description', e.target.value)}
-                                            placeholder="Describe your product..."
-                                            rows={3}
+                                            rows={4}
                                             className={errors.description ? 'border-red-500' : ''}
                                         />
                                         <InputError message={errors.description} />
-                                    </div>
-
-                                    <div>
-                                        <Label htmlFor="status">Status</Label>
-                                        <Select 
-                                            value={data.status} 
-                                            onValueChange={(value: 'active' | 'inactive') => setData('status', value)}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="active">Active</SelectItem>
-                                                <SelectItem value="inactive">Inactive</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <InputError message={errors.status} />
                                     </div>
                                 </CardContent>
                             </Card>
@@ -417,262 +468,199 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
                                 <CardHeader>
                                     <CardTitle className="flex items-center">
                                         <Calculator className="w-5 h-5 mr-2" />
-                                        Pricing & Weight
+                                        Pricing & Weight / මිල සහ බර
                                     </CardTitle>
                                     <CardDescription>
                                         Set pricing and weight specifications
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Base Price */}
                                         <div>
-                                            <Label htmlFor="base_price">Base Price (LKR) *</Label>
+                                            <Label htmlFor="base_price">
+                                                Base Price (LKR) / මූලික මිල (රු.) <span className="text-red-500">*</span>
+                                            </Label>
                                             <Input
                                                 id="base_price"
                                                 type="number"
                                                 step="0.01"
-                                                min="0"
+                                                min="0.01"
+                                                placeholder="Enter base price / මූලික මිල ඇතුළත් කරන්න"
                                                 value={data.base_price}
                                                 onChange={(e) => setData('base_price', e.target.value)}
-                                                className={errors.base_price ? 'border-red-500' : ''}
-                                                placeholder="0.00"
+                                                className={validationErrors.base_price || errors.base_price ? 'border-red-500' : ''}
                                                 required
                                             />
+                                            {validationErrors.base_price && (
+                                                <p className="text-sm text-red-600 mt-1">{validationErrors.base_price}</p>
+                                            )}
                                             <InputError message={errors.base_price} />
                                         </div>
 
+                                        {/* Unit Type */}
                                         <div>
-                                            <Label htmlFor="unit_type">Unit Type *</Label>
+                                            <Label htmlFor="unit_type">
+                                                Unit Type / ඒකක වර්ගය <span className="text-red-500">*</span>
+                                            </Label>
                                             <Select 
                                                 value={data.unit_type} 
-                                                onValueChange={(value: string) => setData('unit_type', value)}
+                                                onValueChange={(value) => setData('unit_type', value)}
                                             >
-                                                <SelectTrigger className={errors.unit_type ? 'border-red-500' : ''}>
-                                                    <SelectValue placeholder="Select unit type" />
+                                                <SelectTrigger className={validationErrors.unit_type || errors.unit_type ? 'border-red-500' : ''}>
+                                                    <SelectValue placeholder="Select unit type / ඒකක වර්ගය තෝරන්න" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="piece">Piece</SelectItem>
-                                                    <SelectItem value="sheet">Sheet</SelectItem>
-                                                    <SelectItem value="roll">Roll</SelectItem>
-                                                    <SelectItem value="meter">Meter</SelectItem>
-                                                    <SelectItem value="square_meter">Square Meter</SelectItem>
-                                                    <SelectItem value="kilogram">Kilogram</SelectItem>
-                                                    <SelectItem value="gram">Gram</SelectItem>
-                                                    <SelectItem value="pound">Pound</SelectItem>
-                                                    <SelectItem value="liter">Liter</SelectItem>
-                                                    <SelectItem value="milliliter">Milliliter</SelectItem>
+                                                    <SelectItem value="piece">Piece / කෑලම</SelectItem>
+                                                    <SelectItem value="box">Box / පෙට්ටිය</SelectItem>
+                                                    <SelectItem value="pack">Pack / පැකේජය</SelectItem>
+                                                    <SelectItem value="bottle">Bottle / බෝතලය</SelectItem>
+                                                    <SelectItem value="kg">Kilogram / කිලෝග්‍රෑම්</SelectItem>
+                                                    <SelectItem value="meter">Meter / මීටර්</SelectItem>
+                                                    <SelectItem value="roll">Roll / රෝලය</SelectItem>
+                                                    <SelectItem value="sheet">Sheet / පත්‍රය</SelectItem>
                                                 </SelectContent>
                                             </Select>
+                                            {validationErrors.unit_type && (
+                                                <p className="text-sm text-red-600 mt-1">{validationErrors.unit_type}</p>
+                                            )}
                                             <InputError message={errors.unit_type} />
                                         </div>
 
+                                        {/* Weight per Unit */}
                                         <div>
-                                            <Label htmlFor="tax_rate">Tax Rate (%)</Label>
+                                            <Label htmlFor="weight_per_unit">
+                                                Weight per Unit / ඒකකයක බර <span className="text-red-500">*</span>
+                                            </Label>
+                                            <Input
+                                                id="weight_per_unit"
+                                                type="number"
+                                                step="0.001"
+                                                min="0.001"
+                                                placeholder="Enter weight per unit / ඒකකයක බර ඇතුළත් කරන්න"
+                                                value={data.weight_per_unit}
+                                                onChange={(e) => setData('weight_per_unit', e.target.value)}
+                                                className={validationErrors.weight_per_unit || errors.weight_per_unit ? 'border-red-500' : ''}
+                                                required
+                                            />
+                                            {validationErrors.weight_per_unit && (
+                                                <p className="text-sm text-red-600 mt-1">{validationErrors.weight_per_unit}</p>
+                                            )}
+                                            <InputError message={errors.weight_per_unit} />
+                                        </div>
+
+                                        {/* Weight Unit */}
+                                        <div>
+                                            <Label htmlFor="weight_unit">
+                                                Weight Unit / බර ඒකකය <span className="text-red-500">*</span>
+                                            </Label>
+                                            <Select 
+                                                value={data.weight_unit} 
+                                                onValueChange={(value) => setData('weight_unit', value as 'kg' | 'g' | 'lb' | 'oz')}
+                                            >
+                                                <SelectTrigger className={validationErrors.weight_unit || errors.weight_unit ? 'border-red-500' : ''}>
+                                                    <SelectValue placeholder="Select weight unit / බර ඒකකය තෝරන්න" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="kg">Kilogram (kg) / කිලෝග්‍රෑම්</SelectItem>
+                                                    <SelectItem value="g">Gram (g) / ග්‍රෑම්</SelectItem>
+                                                    <SelectItem value="lb">Pound (lb) / පවුම්</SelectItem>
+                                                    <SelectItem value="oz">Ounce (oz) / අවුන්ස්</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            {validationErrors.weight_unit && (
+                                                <p className="text-sm text-red-600 mt-1">{validationErrors.weight_unit}</p>
+                                            )}
+                                            <InputError message={errors.weight_unit} />
+                                        </div>
+
+                                        {/* Tax Rate */}
+                                        <div>
+                                            <Label htmlFor="tax_rate">
+                                                Tax Rate (%) / බදු අනුපාතය (%)
+                                            </Label>
                                             <Input
                                                 id="tax_rate"
                                                 type="number"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
+                                                placeholder="Enter tax rate / බදු අනුපාතය ඇතුළත් කරන්න"
                                                 value={data.tax_rate}
                                                 onChange={(e) => setData('tax_rate', e.target.value)}
-                                                className={errors.tax_rate ? 'border-red-500' : ''}
-                                                placeholder="0.00"
+                                                className={validationErrors.tax_rate || errors.tax_rate ? 'border-red-500' : ''}
                                             />
+                                            {validationErrors.tax_rate && (
+                                                <p className="text-sm text-red-600 mt-1">{validationErrors.tax_rate}</p>
+                                            )}
                                             <InputError message={errors.tax_rate} />
                                         </div>
-                                    </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Status */}
                                         <div>
-                                            <Label htmlFor="weight_per_unit">Weight per Unit *</Label>
-                                            <Input
-                                                id="weight_per_unit"
-                                                type="number"
-                                                step="0.001"
-                                                min="0"
-                                                value={data.weight_per_unit}
-                                                onChange={(e) => setData('weight_per_unit', e.target.value)}
-                                                className={errors.weight_per_unit ? 'border-red-500' : ''}
-                                                placeholder="0.000"
-                                                required
-                                            />
-                                            <InputError message={errors.weight_per_unit} />
-                                        </div>
-
-                                        <div>
-                                            <Label htmlFor="weight_unit">Weight Unit *</Label>
+                                            <Label htmlFor="status">
+                                                Status / තත්ත්වය <span className="text-red-500">*</span>
+                                            </Label>
                                             <Select 
-                                                value={data.weight_unit} 
-                                                onValueChange={(value: 'kg' | 'g' | 'lb' | 'oz') => setData('weight_unit', value)}
+                                                value={data.status} 
+                                                onValueChange={(value) => setData('status', value as 'active' | 'inactive')}
                                             >
-                                                <SelectTrigger className={errors.weight_unit ? 'border-red-500' : ''}>
-                                                    <SelectValue />
+                                                <SelectTrigger className={validationErrors.status || errors.status ? 'border-red-500' : ''}>
+                                                    <SelectValue placeholder="Select status / තත්ත්වය තෝරන්න" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="kg">Kilogram (kg)</SelectItem>
-                                                    <SelectItem value="g">Gram (g)</SelectItem>
-                                                    <SelectItem value="lb">Pound (lb)</SelectItem>
-                                                    <SelectItem value="oz">Ounce (oz)</SelectItem>
+                                                    <SelectItem value="active">Active / සක්‍රිය</SelectItem>
+                                                    <SelectItem value="inactive">Inactive / අක්‍රිය</SelectItem>
                                                 </SelectContent>
                                             </Select>
-                                            <InputError message={errors.weight_unit} />
+                                            {validationErrors.status && (
+                                                <p className="text-sm text-red-600 mt-1">{validationErrors.status}</p>
+                                            )}
+                                            <InputError message={errors.status} />
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <Label htmlFor="minimum_quantity">Minimum Quantity</Label>
-                                            <Input
-                                                id="minimum_quantity"
-                                                type="number"
-                                                min="1"
-                                                value={data.minimum_quantity}
-                                                onChange={(e) => setData('minimum_quantity', parseInt(e.target.value) || 1)}
-                                                className={errors.minimum_quantity ? 'border-red-500' : ''}
-                                            />
-                                            <InputError message={errors.minimum_quantity} />
-                                        </div>
-
-                                        <div>
-                                            <Label htmlFor="production_time_days">Production Time (Days)</Label>
-                                            <Input
-                                                id="production_time_days"
-                                                type="number"
-                                                min="0"
-                                                value={data.production_time_days}
-                                                onChange={(e) => setData('production_time_days', parseInt(e.target.value) || 0)}
-                                                className={errors.production_time_days ? 'border-red-500' : ''}
-                                            />
-                                            <InputError message={errors.production_time_days} />
-                                        </div>
-                                    </div>
-
-                                    {/* Price Calculation Display */}
+                                    {/* Price Calculation Preview */}
                                     {priceCalculation && (
-                                        <div className="bg-blue-50 p-4 rounded-lg border">
+                                        <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                                             <h4 className="font-medium text-blue-900 mb-2">Price Calculation Preview</h4>
-                                            <div className="text-sm space-y-1">
-                                                <div className="flex justify-between">
-                                                    <span>Base Price:</span>
-                                                    <span>LKR {priceCalculation.base_price.toFixed(2)}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span>Delivery Charge:</span>
-                                                    <span>LKR {priceCalculation.delivery_charge.toFixed(2)}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span>Tax ({data.tax_rate}%):</span>
-                                                    <span>LKR {priceCalculation.tax_amount.toFixed(2)}</span>
-                                                </div>
-                                                <hr className="my-1" />
-                                                <div className="flex justify-between font-medium">
-                                                    <span>Total:</span>
-                                                    <span>LKR {priceCalculation.total_amount.toFixed(2)}</span>
-                                                </div>
-                                                <div className="text-xs text-gray-600 mt-1">
-                                                    Weight: {priceCalculation.weight_display} | Tier: {priceCalculation.tier_used}
-                                                </div>
+                                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                                <div>Base Price: LKR {priceCalculation.basePrice.toFixed(2)}</div>
+                                                <div>Weight: {priceCalculation.weight.toFixed(3)} kg</div>
+                                                <div>Tax: LKR {priceCalculation.taxAmount.toFixed(2)}</div>
+                                                <div className="font-medium">Total: LKR {priceCalculation.totalPrice.toFixed(2)}</div>
                                             </div>
                                         </div>
                                     )}
                                 </CardContent>
                             </Card>
 
-                            {/* Inventory Management */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center">
-                                        <Weight className="w-5 h-5 mr-2" />
-                                        Inventory Management
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Stock levels and inventory settings
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <Label htmlFor="stock_quantity">Current Stock</Label>
-                                            <Input
-                                                id="stock_quantity"
-                                                type="number"
-                                                min="0"
-                                                value={data.stock_quantity}
-                                                onChange={(e) => setData('stock_quantity', parseInt(e.target.value) || 0)}
-                                                className={errors.stock_quantity ? 'border-red-500' : ''}
-                                            />
-                                            <InputError message={errors.stock_quantity} />
-                                        </div>
-
-                                        <div>
-                                            <Label htmlFor="reorder_level">Reorder Level</Label>
-                                            <Input
-                                                id="reorder_level"
-                                                type="number"
-                                                min="0"
-                                                value={data.reorder_level}
-                                                onChange={(e) => setData('reorder_level', parseInt(e.target.value) || 0)}
-                                                className={errors.reorder_level ? 'border-red-500' : ''}
-                                            />
-                                            <InputError message={errors.reorder_level} />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center space-x-6">
-                                        <div className="flex items-center space-x-2">
-                                            <input
-                                                type="checkbox"
-                                                id="is_featured"
-                                                checked={data.is_featured}
-                                                onChange={(e) => setData('is_featured', e.target.checked)}
-                                                className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                                            />
-                                            <Label htmlFor="is_featured">Featured Product</Label>
-                                        </div>
-
-                                        <div className="flex items-center space-x-2">
-                                            <input
-                                                type="checkbox"
-                                                id="is_digital"
-                                                checked={data.is_digital}
-                                                onChange={(e) => setData('is_digital', e.target.checked)}
-                                                className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                                            />
-                                            <Label htmlFor="is_digital">Digital Product</Label>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            {/* Product Specifications */}
+                            {/* Specifications */}
                             <Card>
                                 <CardHeader>
                                     <CardTitle className="flex items-center">
                                         <Tags className="w-5 h-5 mr-2" />
-                                        Product Specifications
+                                        Specifications / විශේෂාංග
                                     </CardTitle>
                                     <CardDescription>
-                                        Add technical specifications and features
+                                        Add product specifications and features
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     {specifications.map((spec, index) => (
-                                        <div key={index} className="flex gap-3 items-start">
-                                            <div className="flex-1">
-                                                <Input
-                                                    placeholder="Specification name (e.g., Material)"
-                                                    value={spec.key}
-                                                    onChange={(e) => handleSpecificationChange(index, 'key', e.target.value)}
-                                                />
-                                            </div>
-                                            <div className="flex-1">
-                                                <Input
-                                                    placeholder="Value (e.g., Premium Paper)"
-                                                    value={spec.value}
-                                                    onChange={(e) => handleSpecificationChange(index, 'value', e.target.value)}
-                                                />
-                                            </div>
+                                        <div key={index} className="flex space-x-2">
+                                            <Input
+                                                placeholder="Specification name / විශේෂාංග නාමය"
+                                                value={spec.key}
+                                                onChange={(e) => updateSpecification(index, 'key', e.target.value)}
+                                                className="flex-1"
+                                            />
+                                            <Input
+                                                placeholder="Value / අගය"
+                                                value={spec.value}
+                                                onChange={(e) => updateSpecification(index, 'value', e.target.value)}
+                                                className="flex-1"
+                                            />
                                             {specifications.length > 1 && (
                                                 <Button
                                                     type="button"
@@ -685,307 +673,324 @@ export default function ProductEdit({ product, categories = [], pricingTiers = [
                                             )}
                                         </div>
                                     ))}
-
                                     <Button
                                         type="button"
                                         variant="outline"
+                                        size="sm"
                                         onClick={addSpecification}
-                                        className="w-full"
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
-                                        Add Specification
+                                        Add Specification / විශේෂාංගයක් එකතු කරන්න
                                     </Button>
+                                </CardContent>
+                            </Card>
+
+                            {/* Inventory Management */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center">
+                                        <Package className="w-5 h-5 mr-2" />
+                                        Inventory Management / තොග කළමනාකරණය
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                            <Label htmlFor="minimum_quantity">
+                                                Minimum Quantity / අවම ප්‍රමාණය
+                                            </Label>
+                                            <Input
+                                                id="minimum_quantity"
+                                                type="number"
+                                                min="1"
+                                                value={data.minimum_quantity}
+                                                onChange={(e) => setData('minimum_quantity', parseInt(e.target.value) || 1)}
+                                                className={errors.minimum_quantity ? 'border-red-500' : ''}
+                                            />
+                                            <InputError message={errors.minimum_quantity} />
+                                        </div>
+
+                                        <div>
+                                            <Label htmlFor="stock_quantity">
+                                                Stock Quantity / තොග ප්‍රමාණය
+                                            </Label>
+                                            <Input
+                                                id="stock_quantity"
+                                                type="number"
+                                                min="0"
+                                                value={data.stock_quantity}
+                                                onChange={(e) => setData('stock_quantity', parseInt(e.target.value) || 0)}
+                                                className={errors.stock_quantity ? 'border-red-500' : ''}
+                                            />
+                                            <InputError message={errors.stock_quantity} />
+                                        </div>
+
+                                        <div>
+                                            <Label htmlFor="reorder_level">
+                                                Reorder Level / නැවත ඇණවුම් කිරීමේ මට්ටම
+                                            </Label>
+                                            <Input
+                                                id="reorder_level"
+                                                type="number"
+                                                min="0"
+                                                value={data.reorder_level}
+                                                onChange={(e) => setData('reorder_level', parseInt(e.target.value) || 0)}
+                                                className={errors.reorder_level ? 'border-red-500' : ''}
+                                            />
+                                            <InputError message={errors.reorder_level} />
+                                        </div>
+                                    </div>
                                 </CardContent>
                             </Card>
 
                             {/* Customization Options */}
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Customization Options</CardTitle>
-                                    <CardDescription>
-                                        Configure if this product allows customization
-                                    </CardDescription>
+                                    <CardTitle>Customization / අභිරුචිකරණය</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <div className="flex items-center space-x-2">
-                                        <input
-                                            type="checkbox"
+                                        <Checkbox
                                             id="requires_customization"
                                             checked={data.requires_customization}
-                                            onChange={(e) => setData('requires_customization', e.target.checked)}
-                                            className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                                            onCheckedChange={(checked) => setData('requires_customization', !!checked)}
                                         />
-                                        <Label htmlFor="requires_customization">Requires Customization</Label>
+                                        <Label htmlFor="requires_customization">
+                                            Requires Customization / අභිරුචිකරණය අවශ්‍යයි
+                                        </Label>
                                     </div>
 
                                     {data.requires_customization && (
                                         <div>
-                                            <Label htmlFor="customization_options">Customization Options</Label>
+                                            <Label htmlFor="customization_options">
+                                                Customization Options / අභිරුචිකරණ විකල්ප
+                                            </Label>
                                             <Textarea
                                                 id="customization_options"
+                                                placeholder="Describe customization options / අභිරුචිකරණ විකල්ප විස්තර කරන්න"
                                                 value={data.customization_options}
                                                 onChange={(e) => setData('customization_options', e.target.value)}
-                                                placeholder="Describe available customization options..."
                                                 rows={3}
                                                 className={errors.customization_options ? 'border-red-500' : ''}
                                             />
                                             <InputError message={errors.customization_options} />
                                         </div>
                                     )}
+
+                                    <div>
+                                        <Label htmlFor="production_time_days">
+                                            Production Time (Days) / නිෂ්පාදන කාලය (දින)
+                                        </Label>
+                                        <Input
+                                            id="production_time_days"
+                                            type="number"
+                                            min="0"
+                                            max="365"
+                                            value={data.production_time_days}
+                                            onChange={(e) => setData('production_time_days', parseInt(e.target.value) || 0)}
+                                            className={errors.production_time_days ? 'border-red-500' : ''}
+                                        />
+                                        <InputError message={errors.production_time_days} />
+                                    </div>
                                 </CardContent>
                             </Card>
 
                             {/* SEO Settings */}
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>SEO & Search</CardTitle>
+                                    <CardTitle>SEO Settings / SEO සැකසීම්</CardTitle>
                                     <CardDescription>
-                                        Optimize for search engines and internal search
+                                        Optimize product for search engines
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <div>
-                                        <Label htmlFor="keywords">Keywords</Label>
+                                        <Label htmlFor="keywords">
+                                            Keywords / මූල පද
+                                        </Label>
                                         <Input
                                             id="keywords"
+                                            placeholder="Enter keywords separated by commas / කොමා වලින් වෙන් කළ මූල පද ඇතුළත් කරන්න"
                                             value={data.keywords}
                                             onChange={(e) => setData('keywords', e.target.value)}
-                                            placeholder="printing, business cards, flyers (comma separated)"
                                             className={errors.keywords ? 'border-red-500' : ''}
                                         />
                                         <InputError message={errors.keywords} />
                                     </div>
 
                                     <div>
-                                        <Label htmlFor="meta_title">Meta Title</Label>
+                                        <Label htmlFor="meta_title">
+                                            SEO Title (Max 60 characters)
+                                        </Label>
                                         <Input
                                             id="meta_title"
+                                            placeholder="Enter SEO title"
                                             value={data.meta_title}
                                             onChange={(e) => setData('meta_title', e.target.value)}
-                                            placeholder="SEO title for search engines"
+                                            maxLength={60}
                                             className={errors.meta_title ? 'border-red-500' : ''}
                                         />
+                                        <div className="text-sm text-gray-500 mt-1">
+                                            {data.meta_title.length}/60 characters
+                                        </div>
                                         <InputError message={errors.meta_title} />
                                     </div>
 
                                     <div>
-                                        <Label htmlFor="meta_description">Meta Description</Label>
+                                        <Label htmlFor="meta_description">
+                                            SEO Description (Max 160 characters)
+                                        </Label>
                                         <Textarea
                                             id="meta_description"
+                                            placeholder="Enter SEO description"
                                             value={data.meta_description}
                                             onChange={(e) => setData('meta_description', e.target.value)}
-                                            placeholder="Brief description for search engines (160 characters max)"
-                                            rows={2}
+                                            maxLength={160}
+                                            rows={3}
                                             className={errors.meta_description ? 'border-red-500' : ''}
                                         />
+                                        <div className="text-sm text-gray-500 mt-1">
+                                            {data.meta_description.length}/160 characters
+                                        </div>
                                         <InputError message={errors.meta_description} />
                                     </div>
                                 </CardContent>
                             </Card>
                         </div>
 
-                        {/* Right Column - Image & Actions */}
+                        {/* Right Column - Image & Settings */}
                         <div className="space-y-6">
                             {/* Product Image */}
                             <Card>
                                 <CardHeader>
                                     <CardTitle className="flex items-center">
                                         <ImageIcon className="w-5 h-5 mr-2" />
-                                        Product Image
+                                        Product Image / නිෂ්පාදන රූපය
                                     </CardTitle>
-                                    <CardDescription>
-                                        Upload or update product image
-                                    </CardDescription>
                                 </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-4">
-                                        <div className="flex items-center justify-center w-full">
-                                            <label htmlFor="image" className="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
-                                                {imagePreview ? (
-                                                    <div className="relative w-full h-full">
-                                                        <img
-                                                            src={imagePreview}
-                                                            alt="Product preview"
-                                                            className="w-full h-full object-cover rounded-lg"
-                                                        />
-                                                        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-lg">
-                                                            <p className="text-white text-sm">Click to change image</p>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                                        <Upload className="w-10 h-10 mb-3 text-gray-400" />
-                                                        <p className="mb-2 text-sm text-gray-500">
-                                                            <span className="font-semibold">Click to upload</span> or drag and drop
-                                                        </p>
-                                                        <p className="text-xs text-gray-500">PNG, JPG or JPEG (MAX. 2MB)</p>
-                                                    </div>
-                                                )}
-                                                <input
-                                                    id="image"
-                                                    type="file"
-                                                    className="hidden"
-                                                    accept="image/*"
-                                                    onChange={handleImageChange}
-                                                />
-                                            </label>
+                                <CardContent className="space-y-4">
+                                    {/* Image Preview */}
+                                    {imagePreview && (
+                                        <div className="relative">
+                                            <img
+                                                src={imagePreview}
+                                                alt="Product preview"
+                                                className="w-full h-48 object-cover rounded-lg border"
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="absolute top-2 right-2"
+                                                onClick={() => {
+                                                    setImagePreview(null);
+                                                    setData('image', null);
+                                                }}
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </Button>
                                         </div>
+                                    )}
 
-                                        {imagePreview && data.image && (
-                                            <div className="flex justify-center">
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={removeImage}
-                                                >
-                                                    <X className="w-4 h-4 mr-2" />
-                                                    Remove New Image
-                                                </Button>
-                                            </div>
-                                        )}
+                                    {/* Image Upload */}
+                                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                                        <input
+                                            type="file"
+                                            id="image"
+                                            accept="image/*"
+                                            onChange={handleImageChange}
+                                            className="hidden"
+                                        />
+                                        <Label htmlFor="image" className="cursor-pointer">
+                                            <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                                            <p className="text-sm text-gray-600">
+                                                Click to upload image / රූපයක් උඩුගත කිරීමට ක්ලික් කරන්න
+                                            </p>
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                PNG, JPG, GIF up to 3MB / PNG, JPG, GIF 3MB දක්වා
+                                            </p>
+                                        </Label>
+                                    </div>
+                                    <InputError message={errors.image} />
+                                </CardContent>
+                            </Card>
 
-                                        <InputError message={errors.image} />
+                            {/* Product Settings */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Product Settings / නිෂ්පාදන සැකසීම්</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id="is_featured"
+                                            checked={data.is_featured}
+                                            onCheckedChange={(checked) => setData('is_featured', !!checked)}
+                                        />
+                                        <Label htmlFor="is_featured" className="flex items-center">
+                                            <Star className="w-4 h-4 mr-1" />
+                                            Featured Product / විශේෂාංගීකෘත නිෂ්පාදනය
+                                        </Label>
+                                    </div>
+
+                                    <div className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id="is_digital"
+                                            checked={data.is_digital}
+                                            onCheckedChange={(checked) => setData('is_digital', !!checked)}
+                                        />
+                                        <Label htmlFor="is_digital">
+                                            Digital Product / ඩිජිටල් නිෂ්පාදනය
+                                        </Label>
                                     </div>
                                 </CardContent>
                             </Card>
 
-                            {/* Current Product Info */}
+                            {/* Product Information */}
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Current Product Info</CardTitle>
+                                    <CardTitle>Product Information</CardTitle>
                                 </CardHeader>
-                                <CardContent className="space-y-3">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">Product ID:</span>
-                                        <span className="font-mono">#{product.id}</span>
-                                    </div>
-                                    
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">Current Code:</span>
-                                        <span className="font-mono">{product.product_code}</span>
-                                    </div>
-                                    
-                                    <div className="flex justify-between text-sm">
+                                <CardContent className="space-y-2 text-sm">
+                                    <div className="flex justify-between">
                                         <span className="text-gray-600">Created:</span>
                                         <span>{new Date(product.created_at).toLocaleDateString()}</span>
                                     </div>
-                                    
-                                    <div className="flex justify-between text-sm">
+                                    <div className="flex justify-between">
                                         <span className="text-gray-600">Last Updated:</span>
                                         <span>{new Date(product.updated_at).toLocaleDateString()}</span>
                                     </div>
-                                    
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">Status:</span>
-                                        <span className={`px-2 py-1 rounded-full text-xs ${
-                                            product.status === 'active' 
-                                                ? 'bg-green-100 text-green-800' 
-                                                : 'bg-gray-100 text-gray-800'
-                                        }`}>
-                                            {product.status}
-                                        </span>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            {/* Pricing Tiers Info */}
-                            {pricingTiers.length > 0 && (
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle>Available Pricing Tiers</CardTitle>
-                                        <CardDescription>
-                                            Delivery charges based on weight
-                                        </CardDescription>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="space-y-2">
-                                            {pricingTiers.map((tier, index) => (
-                                                <div key={tier.id} className="text-sm p-2 bg-gray-50 rounded">
-                                                    <div className="font-medium">{tier.tier_name}</div>
-                                                    <div className="text-gray-600">
-                                                        {tier.min_weight}kg - {tier.max_weight ? `${tier.max_weight}kg` : '∞'}
-                                                    </div>
-                                                    <div className="text-gray-600">
-                                                        Base: LKR {tier.base_price} 
-                                                        {tier.per_kg_rate && ` + LKR ${tier.per_kg_rate}/kg`}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            )}
-
-                            {/* Action Buttons */}
-                            <Card>
-                                <CardContent className="pt-6">
-                                    <div className="space-y-3">
-                                        <Button 
-                                            type="submit" 
-                                            className="w-full" 
-                                            disabled={processing}
-                                        >
-                                            {processing ? (
-                                                <>
-                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                                    Updating Product...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Save className="w-4 h-4 mr-2" />
-                                                    Update Product
-                                                </>
-                                            )}
-                                        </Button>
-
-                                        <Link href={`/products/${product.id}`} className="block">
-                                            <Button variant="outline" className="w-full">
-                                                Cancel
-                                            </Button>
-                                        </Link>
-
-                                        <div className="pt-2 border-t">
-                                            <Link href="/products" className="block">
-                                                <Button variant="ghost" size="sm" className="w-full">
-                                                    Back to Products List
-                                                </Button>
-                                            </Link>
-                                        </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Product ID:</span>
+                                        <span>{product.id}</span>
                                     </div>
                                 </CardContent>
                             </Card>
                         </div>
                     </div>
-                </form>
 
-                {/* Debug Information (Remove in production) */}
-                {process.env.NODE_ENV === 'development' && (
-                    <Card className="mt-6">
-                        <CardHeader>
-                            <CardTitle className="text-sm">Debug Info (Development Only)</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <details className="text-xs">
-                                <summary className="cursor-pointer font-medium mb-2">Form Data</summary>
-                                <pre className="bg-gray-100 p-2 rounded overflow-auto">
-                                    {JSON.stringify(data, null, 2)}
-                                </pre>
-                            </details>
-                            
-                            {Object.keys(errors).length > 0 && (
-                                <details className="text-xs mt-2">
-                                    <summary className="cursor-pointer font-medium mb-2 text-red-600">
-                                        Validation Errors
-                                    </summary>
-                                    <pre className="bg-red-50 p-2 rounded overflow-auto text-red-700">
-                                        {JSON.stringify(errors, null, 2)}
-                                    </pre>
-                                </details>
+                    {/* Submit Button */}
+                    <div className="flex justify-end space-x-4 pt-6 border-t">
+                        <Link href="/products">
+                            <Button type="button" variant="outline">
+                                Cancel / අවලංගු කරන්න
+                            </Button>
+                        </Link>
+                        <Button type="submit" disabled={processing}>
+                            {processing ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Updating... / යාවත්කාලීන කරමින්...
+                                </>
+                            ) : (
+                                <>
+                                    <Save className="w-4 h-4 mr-2" />
+                                    Update Product / නිෂ්පාදනය යාවත්කාලීන කරන්න
+                                </>
                             )}
-                        </CardContent>
-                    </Card>
-                )}
+                        </Button>
+                    </div>
+                </form>
             </div>
         </AppLayout>
     );
