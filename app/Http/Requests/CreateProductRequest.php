@@ -39,14 +39,14 @@ class CreateProductRequest extends FormRequest
                     }
                 },
             ],
-            'product_code' => [
-                'nullable',
-                'string',
-                'max:50',
-                'min:3',
-                'unique:products,product_code',
-                'regex:/^[A-Z0-9_-]+$/', // Only uppercase letters, numbers, underscore, hyphen
-            ],
+           'product_code' => [
+    'nullable', // required → nullable කරන්න
+    'string',
+    'max:50',
+    'min:3',
+    'regex:/^[A-Z0-9_-]+$/',
+    'unique:products,product_code',
+],
             'name' => [
                 'required',
                 'string',
@@ -230,11 +230,7 @@ class CreateProductRequest extends FormRequest
             'category_id.exists' => 'තෝරාගත් කාණ්ඩය නොපවතී. / Selected category does not exist.',
 
             // Product code validation messages
-            'product_code.unique' => 'මෙම නිෂ්පාදන කේතය දැනටමත් භාවිතා වේ. / This product code is already taken.',
-            'product_code.max' => 'නිෂ්පාදන කේතය අකුරු 50ට වඩා වැඩි විය නොහැක. / Product code cannot exceed 50 characters.',
-            'product_code.min' => 'නිෂ්පාදන කේතය අවම අකුරු 3ක් විය යුතුයි. / Product code must be at least 3 characters.',
-            'product_code.regex' => 'නිෂ්පාදන කේතය ලොකු අකුරු, අංක, _ සහ - පමණක් අඩංගු විය යුතුයි. / Product code can only contain uppercase letters, numbers, underscore, and hyphen.',
-
+            
             // Name validation messages
             'name.required' => 'නිෂ්පාදන නාමය අවශ්‍යයි. / Product name is required.',
             'name.max' => 'නිෂ්පාදන නාමය අකුරු 255ට වඩා වැඩි විය නොහැක. / Product name cannot exceed 255 characters.',
@@ -398,39 +394,39 @@ class CreateProductRequest extends FormRequest
      * Prepare product code
      */
     private function prepareProductCode(): ?string
-    {
-        if ($this->product_code) {
-            // Clean and format provided code
-            return strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', trim($this->product_code)));
-        }
+{
+    if ($this->product_code) {
+        // If provided, clean and format
+        return strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', trim($this->product_code)));
+    }
 
-        if ($this->category_id && $this->name) {
-            // Auto-generate code from category and name
-            $category = \App\Models\ProductCategory::find($this->category_id);
-            $categoryCode = $category ? substr($category->code, 0, 3) : 'PRD';
-            
-            $nameCode = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $this->name), 0, 3));
-            $baseCode = $categoryCode . '-' . $nameCode;
-            
-            // Ensure uniqueness
-            $counter = 1;
+    if ($this->category_id && $this->name) {
+        // Auto-generate from category + name
+        $category = \App\Models\ProductCategory::find($this->category_id);
+        $categoryCode = $category ? substr($category->code, 0, 3) : 'PRD';
+        
+        $nameCode = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $this->name), 0, 3));
+        $baseCode = $categoryCode . '-' . $nameCode;
+        
+        // Ensure uniqueness
+        $counter = 1;
+        $code = $baseCode . str_pad($counter, 3, '0', STR_PAD_LEFT);
+        
+        while (\App\Models\Product::where('product_code', $code)->exists()) {
+            $counter++;
             $code = $baseCode . str_pad($counter, 3, '0', STR_PAD_LEFT);
             
-            while (\App\Models\Product::where('product_code', $code)->exists()) {
-                $counter++;
-                $code = $baseCode . str_pad($counter, 3, '0', STR_PAD_LEFT);
-                
-                if ($counter > 999) {
-                    $code = $baseCode . '-' . uniqid();
-                    break;
-                }
+            if ($counter > 999) {
+                $code = $baseCode . '-' . uniqid();
+                break;
             }
-            
-            return $code;
         }
-
-        return null;
+        
+        return $code;
     }
+
+    return null;
+}
 
     /**
      * Prepare specifications array

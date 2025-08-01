@@ -59,6 +59,7 @@ interface ProductFormData {
     name: string;
     description: string;
     base_price: string;
+    
     unit_type: string;
     weight_per_unit: string;
     weight_unit: 'kg' | 'g' | 'lb' | 'oz';
@@ -90,23 +91,24 @@ export default function ProductCreate({ categories = [], pricingTiers = [] }: Pr
     ]);
     const [priceCalculation, setPriceCalculation] = useState<any>(null);
 
-    const { data, setData, post, processing, errors } = useForm<ProductFormData>({
-        category_id: '',
-        name: '',
-        description: '',
-        base_price: '',
-        unit_type: 'piece',
-        weight_per_unit: '',
-        weight_unit: 'kg',
-        tax_rate: '0',
-        status: 'active',
-        specifications: {},
-        requires_customization: false,
-        minimum_quantity: '1',
-        maximum_quantity: '',
-        customization_options: '',
-    });
-
+   // useForm data එකේ product_code අයින් කරන්න
+const { data, setData, post, processing, errors } = useForm<ProductFormData>({
+    category_id: '',
+    name: '',
+    // product_code: '', ← මේක remove කරන්න
+    description: '',
+    base_price: '',
+    unit_type: 'piece',
+    weight_per_unit: '',
+    weight_unit: 'kg',
+    tax_rate: '0',
+    status: 'active',
+    specifications: {},
+    requires_customization: false,
+    minimum_quantity: '1',
+    maximum_quantity: '',
+    customization_options: '',
+});
     // Calculate pricing when weight changes
     useEffect(() => {
         if (data.weight_per_unit && data.base_price && pricingTiers.length > 0) {
