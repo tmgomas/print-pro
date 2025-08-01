@@ -44,7 +44,7 @@ class CreateProductRequest extends FormRequest
     'string',
     'max:50',
     'min:3',
-    'regex:/^[A-Z0-9_-]+$/',
+   
     'unique:products,product_code',
 ],
             'name' => [
