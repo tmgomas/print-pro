@@ -127,7 +127,13 @@ class BranchRepository extends BaseRepository
     {
         return $this->model->find($branchId)->users()->exists();
     }
-
+public function getForCompany(int $companyId): Collection
+{
+    return $this->model->where('company_id', $companyId)
+                      ->where('status', 'active')
+                      ->orderBy('name')
+                      ->get(['id', 'name', 'code']);
+}
     /**
      * Check if branch has invoices
      */

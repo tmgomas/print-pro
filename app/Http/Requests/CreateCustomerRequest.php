@@ -46,15 +46,14 @@ class CreateCustomerRequest extends FormRequest
                 'max:50',
                 'min:3',
                 'unique:customers,customer_code',
-                'regex:/^[A-Z0-9_-]+$/', // Only uppercase letters, numbers, underscore, hyphen
+               
             ],
             'name' => [
                 'required',
                 'string',
                 'max:255',
                 'min:2',
-                'regex:/^[a-zA-Z\s\u0D80-\u0DFF\.]+$/', // Allow English, Sinhala characters, spaces, dots
-            ],
+                 ],
             'email' => [
                 'nullable',
                 'email:rfc,dns',
@@ -67,8 +66,7 @@ class CreateCustomerRequest extends FormRequest
                 'string',
                 'max:20',
                 'min:9',
-                'regex:/^[\+]?[0-9\-\(\)\s]+$/', // Allow international format
-                function ($attribute, $value, $fail) {
+                  function ($attribute, $value, $fail) {
                     // Sri Lankan phone number validation
                     $cleanPhone = preg_replace('/[^\d\+]/', '', $value);
                     
@@ -102,14 +100,12 @@ class CreateCustomerRequest extends FormRequest
                 'string',
                 'max:100',
                 'min:2',
-                'regex:/^[a-zA-Z\s\u0D80-\u0DFF\-\']+$/', // Allow letters, spaces, hyphens, apostrophes
-            ],
+                 ],
             'postal_code' => [
                 'nullable',
                 'string',
                 'max:10',
-                'regex:/^[0-9]{5}$/', // Sri Lankan postal code format
-            ],
+                 ],
             'district' => [
                 'nullable',
                 'string',
@@ -127,8 +123,7 @@ class CreateCustomerRequest extends FormRequest
                 'string',
                 'max:50',
                 'unique:customers,tax_number',
-                'regex:/^[A-Z0-9\-]+$/', // Tax number format
-            ],
+                ],
             'credit_limit' => [
                 'nullable',
                 'numeric',
@@ -175,23 +170,19 @@ class CreateCustomerRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:50',
-                'regex:/^[A-Z0-9\-\/]+$/', // Company registration format
-                'required_if:customer_type,business',
-            ],
+                 ],
             'contact_person' => [
                 'required_if:customer_type,business',
                 'nullable',
                 'string',
                 'max:255',
                 'min:2',
-                'regex:/^[a-zA-Z\s\u0D80-\u0DFF\.]+$/',
-            ],
+                   ],
             'contact_person_phone' => [
                 'nullable',
                 'string',
                 'max:20',
-                'regex:/^[\+]?[0-9\-\(\)\s]+$/',
-                'required_if:customer_type,business',
+                      'required_if:customer_type,business',
             ],
             'contact_person_email' => [
                 'nullable',
@@ -239,8 +230,7 @@ class CreateCustomerRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:20',
-                'regex:/^[\+]?[0-9\-\(\)\s]+$/',
-            ],
+                 ],
             'emergency_contact_relationship' => [
                 'nullable',
                 'string',
