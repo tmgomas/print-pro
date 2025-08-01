@@ -111,38 +111,38 @@ class ProductController extends Controller
      * Store a newly created product
      */
     public function store(CreateProductRequest $request): RedirectResponse
-    {
-        dd('hi');
-        try {
-            $data = $request->validated();
-            $data['company_id'] = auth()->user()->company_id;
+{
+    // dd('hi'); <-- මේක remove කරන්න
+    try {
+        $data = $request->validated();
+        $data['company_id'] = auth()->user()->company_id;
 
-            // Generate unique product code if not provided
-            if (empty($data['product_code'])) {
-                $data['product_code'] = $this->productRepository->generateUniqueCode($data['category_id']);
-            }
-
-            // Handle image upload
-            if ($request->hasFile('image')) {
-                $data['image'] = $request->file('image')->store('products', 'public');
-            }
-
-            // Handle specifications JSON
-            if ($request->has('specifications') && is_array($request->specifications)) {
-                $data['specifications'] = $request->specifications;
-            }
-
-            $product = $this->productRepository->create($data);
-
-            return redirect()->route('products.show', $product->id)
-                ->with('success', 'Product created successfully.');
-
-        } catch (\Exception $e) {
-            return back()
-                ->withInput()
-                ->withErrors(['error' => 'Product creation failed. Please try again.']);
+        // Generate unique product code if not provided
+        if (empty($data['product_code'])) {
+            $data['product_code'] = $this->productRepository->generateUniqueCode($data['category_id']);
         }
+
+        // Handle image upload
+        if ($request->hasFile('image')) {
+            $data['image'] = $request->file('image')->store('products', 'public');
+        }
+
+        // Handle specifications JSON
+        if ($request->has('specifications') && is_array($request->specifications)) {
+            $data['specifications'] = $request->specifications;
+        }
+
+        $product = $this->productRepository->create($data);
+
+        return redirect()->route('products.show', $product->id)
+            ->with('success', 'Product created successfully.');
+
+    } catch (\Exception $e) {
+        return back()
+            ->withInput()
+            ->withErrors(['error' => 'Product creation failed. Please try again.']);
     }
+}
 
     /**
      * Display the specified product
