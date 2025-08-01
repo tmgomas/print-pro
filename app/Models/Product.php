@@ -22,6 +22,7 @@ class Product extends Model
         'description',
         'base_price',
         'unit_type',
+        
         'weight_per_unit',
         'weight_unit',
         'tax_rate',

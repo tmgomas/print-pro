@@ -375,48 +375,7 @@ class UpdateProductRequest extends FormRequest
     /**
      * Prepare the data for validation.
      */
-    protected function prepareForValidation(): void
-    {
-        $this->merge([
-            // Clean and format name
-            'name' => $this->name ? trim($this->name) : null,
-
-            // Format product code if provided
-            'product_code' => $this->product_code ? 
-                strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', trim($this->product_code))) : null,
-
-            // Clean description
-            'description' => $this->description ? trim($this->description) : null,
-
-            // Format prices
-            'base_price' => $this->base_price ? round(floatval($this->base_price), 2) : null,
-            'tax_rate' => $this->tax_rate ? round(floatval($this->tax_rate), 2) : 0,
-
-            // Format weight
-            'weight_per_unit' => $this->weight_per_unit ? round(floatval($this->weight_per_unit), 3) : null,
-
-            // Process specifications
-            'specifications' => $this->prepareSpecifications(),
-
-            // Process pricing tiers
-            'pricing_tiers' => $this->preparePricingTiers(),
-
-            // Set defaults for optional fields
-            'minimum_quantity' => $this->minimum_quantity ?? 1,
-            'stock_quantity' => $this->stock_quantity ?? 0,
-            'reorder_level' => $this->reorder_level ?? 0,
-            'requires_customization' => $this->requires_customization ?? false,
-            'is_featured' => $this->is_featured ?? false,
-            'is_digital' => $this->is_digital ?? false,
-            'production_time_days' => $this->production_time_days ?? 0,
-
-            // Clean text fields
-            'customization_options' => $this->customization_options ? trim($this->customization_options) : null,
-            'keywords' => $this->keywords ? trim($this->keywords) : null,
-            'meta_title' => $this->meta_title ? trim($this->meta_title) : null,
-            'meta_description' => $this->meta_description ? trim($this->meta_description) : null,
-        ]);
-    }
+  
 
     /**
      * Prepare specifications array
@@ -493,4 +452,25 @@ class UpdateProductRequest extends FormRequest
 
         parent::failedValidation($validator);
     }
+    public function prepareForValidation(): void
+{
+    $this->merge([
+        // Clean product name
+        'name' => $this->name ? trim($this->name) : null,
+        
+        // Format product code
+        'product_code' => $this->product_code ? 
+            strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', trim($this->product_code))) : null,
+            
+        // Clean description
+        'description' => $this->description ? trim($this->description) : null,
+        
+        // Format prices
+        'base_price' => $this->base_price ? round(floatval($this->base_price), 2) : null,
+        'tax_rate' => $this->tax_rate ? round(floatval($this->tax_rate), 2) : 0,
+        
+        // Process specifications
+        'specifications' => $this->prepareSpecifications(),
+    ]);
+}
 }

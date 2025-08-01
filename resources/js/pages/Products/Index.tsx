@@ -415,11 +415,11 @@ export default function ProductsIndex({ products, categories = [], stats, filter
                                                     </Link>
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem asChild>
-                                                    <Link href={`/products/${product.id}/edit`}>
-                                                        <Edit className="w-4 h-4 mr-2" />
-                                                        Edit
-                                                    </Link>
-                                                </DropdownMenuItem>
+    <Link href={`/products/${product.id}/edit`}>
+        <Edit className="w-4 h-4 mr-2" />
+        Edit
+    </Link>
+</DropdownMenuItem>
                                                 <DropdownMenuSeparator />
                                                 <DropdownMenuItem 
                                                     onClick={() => handleDelete(product.id)}

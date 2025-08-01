@@ -192,7 +192,89 @@ public function store(CreateProductRequest $request): RedirectResponse
             ],
         ]);
     }
+/**
+ * Show the form for editing the specified product
+ */
+// app/Http/Controllers/ProductController.php
+public function edit(int $id): Response
+{
+    $product = $this->productRepository->findOrFail($id);
+    $this->authorize('edit products');
 
+    $user = auth()->user();
+    if ($product->company_id !== $user->company_id) {
+        abort(403, 'You cannot edit this product.');
+    }
+
+    $categories = $this->categoryRepository->getForDropdown($user->company_id);
+    
+    return Inertia::render('Products/Edit', [
+        'product' => [
+            'id' => $product->id,
+            'name' => $product->name,
+            'product_code' => $product->product_code,
+            'description' => $product->description,
+            'category_id' => $product->category_id,
+            'base_price' => $product->base_price,
+            'unit_type' => $product->unit_type ?? 'piece', // Add this line
+            'weight_per_unit' => $product->weight_per_unit,
+            'weight_unit' => $product->weight_unit,
+            'tax_rate' => $product->tax_rate,
+            'status' => $product->status,
+            'image_url' => $product->image_url,
+            'specifications' => $product->specifications,
+            'requires_customization' => $product->requires_customization,
+            'customization_options' => $product->customization_options,
+            'minimum_quantity' => $product->minimum_quantity,
+            'stock_quantity' => $product->stock_quantity,
+            'reorder_level' => $product->reorder_level,
+            'is_featured' => $product->is_featured,
+            'is_digital' => $product->is_digital,
+            'production_time_days' => $product->production_time_days,
+            'keywords' => $product->keywords,
+            'meta_title' => $product->meta_title,
+            'meta_description' => $product->meta_description,
+            'created_at' => $product->created_at,
+            'updated_at' => $product->updated_at,
+        ],
+        'categories' => $categories,
+    ]);
+}
+/**
+ * Update the specified product
+ */
+public function update(UpdateProductRequest $request, int $id): RedirectResponse
+{
+    try {
+        $product = $this->productRepository->findOrFail($id);
+        
+        $user = auth()->user();
+        if ($product->company_id !== $user->company_id) {
+            abort(403, 'You cannot edit this product.');
+        }
+
+        $data = $request->validated();
+        
+        // Handle image upload
+        if ($request->hasFile('image')) {
+            // Delete old image
+            if ($product->image) {
+                Storage::disk('public')->delete($product->image);
+            }
+            $data['image'] = $request->file('image')->store('products', 'public');
+        }
+
+        $this->productRepository->update($id, $data);
+
+        return redirect()->route('products.show', $id)
+            ->with('success', 'Product updated successfully.');
+
+    } catch (\Exception $e) {
+        return back()
+            ->withInput()
+            ->withErrors(['error' => 'Product update failed.']);
+    }
+}
     /**
      * Calculate product pricing
      */
