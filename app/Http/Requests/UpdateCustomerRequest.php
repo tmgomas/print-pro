@@ -1,19 +1,19 @@
 <?php
-// app/Http/Requests/CreateCustomerRequest.php
+// app/Http/Requests/UpdateCustomerRequest.php
 
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class CreateCustomerRequest extends FormRequest
+class UpdateCustomerRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
     {
-        return $this->user() && $this->user()->can('create customers');
+        return $this->user() && $this->user()->can('update customers');
     }
 
     /**
@@ -21,6 +21,8 @@ class CreateCustomerRequest extends FormRequest
      */
     public function rules(): array
     {
+        $customerId = $this->route('customer')->id ?? $this->route('id');
+        
         $baseRules = [
             'branch_id' => [
                 'nullable',
@@ -39,11 +41,11 @@ class CreateCustomerRequest extends FormRequest
                 },
             ],
             'customer_code' => [
-                'nullable',
+                'required',
                 'string',
                 'max:50',
                 'min:3',
-                Rule::unique('customers', 'customer_code'),
+                Rule::unique('customers', 'customer_code')->ignore($customerId),
                 'regex:/^[A-Z0-9_\-]+$/', // Fixed: escaped the dash
             ],
             'name' => [
@@ -56,7 +58,7 @@ class CreateCustomerRequest extends FormRequest
                 'nullable',
                 'email:rfc,dns',
                 'max:255',
-                Rule::unique('customers', 'email'),
+                Rule::unique('customers', 'email')->ignore($customerId),
                 'lowercase',
             ],
             'phone' => [
@@ -67,12 +69,10 @@ class CreateCustomerRequest extends FormRequest
                 function ($attribute, $value, $fail) {
                     $cleanPhone = preg_replace('/[^\d\+]/', '', $value);
                     
-                    // Sri Lankan phone validation
                     if (preg_match('/^(?:\+94|94|0)?[1-9][0-9]{8}$/', $cleanPhone)) {
                         return;
                     }
                     
-                    // International format
                     if (preg_match('/^\+[1-9]\d{6,14}$/', $cleanPhone)) {
                         return;
                     }
@@ -118,7 +118,7 @@ class CreateCustomerRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:50',
-                Rule::unique('customers', 'tax_number'),
+                Rule::unique('customers', 'tax_number')->ignore($customerId),
                 'regex:/^[A-Z0-9\-]+$/', // Fixed: escaped the dash
             ],
             'credit_limit' => [
@@ -168,12 +168,10 @@ class CreateCustomerRequest extends FormRequest
                         if ($value) {
                             $cleanPhone = preg_replace('/[^\d\+]/', '', $value);
                             
-                            // Sri Lankan phone validation
                             if (preg_match('/^(?:\+94|94|0)?[1-9][0-9]{8}$/', $cleanPhone)) {
                                 return;
                             }
                             
-                            // International format
                             if (preg_match('/^\+[1-9]\d{6,14}$/', $cleanPhone)) {
                                 return;
                             }
@@ -219,12 +217,10 @@ class CreateCustomerRequest extends FormRequest
                         if ($value) {
                             $cleanPhone = preg_replace('/[^\d\+]/', '', $value);
                             
-                            // Sri Lankan phone validation
                             if (preg_match('/^(?:\+94|94|0)?[1-9][0-9]{8}$/', $cleanPhone)) {
                                 return;
                             }
                             
-                            // International format
                             if (preg_match('/^\+[1-9]\d{6,14}$/', $cleanPhone)) {
                                 return;
                             }
@@ -273,18 +269,6 @@ class CreateCustomerRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        // Generate customer code if not provided
-        if (empty($this->customer_code)) {
-            $this->merge([
-                'customer_code' => $this->generateCustomerCode(),
-            ]);
-        }
-
-        // Set company_id from authenticated user
-        $this->merge([
-            'company_id' => auth()->user()->company_id,
-        ]);
-
         // Clean and format phone numbers
         if ($this->phone) {
             $this->merge([
@@ -317,34 +301,12 @@ class CreateCustomerRequest extends FormRequest
             ]);
         }
 
-        // Set default credit limit if not provided
-        if (!isset($this->credit_limit) || $this->credit_limit === '') {
-            $this->merge([
-                'credit_limit' => 0,
-            ]);
-        }
-
         // Handle preferences
         if ($this->preferences && is_string($this->preferences)) {
             $this->merge([
                 'preferences' => json_decode($this->preferences, true) ?: [],
             ]);
         }
-    }
-
-    /**
-     * Generate unique customer code
-     */
-    private function generateCustomerCode(): string
-    {
-        $companyId = auth()->user()->company_id;
-        $prefix = 'CUS';
-        
-        do {
-            $code = $prefix . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
-        } while (\App\Models\Customer::where('customer_code', $code)->exists());
-        
-        return $code;
     }
 
     /**
@@ -369,4 +331,3 @@ class CreateCustomerRequest extends FormRequest
         return $cleaned;
     }
 }
-

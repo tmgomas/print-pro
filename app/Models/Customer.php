@@ -33,8 +33,15 @@ class Customer extends Model
         'status',
         'customer_type',
         'date_of_birth',
+        'age',
         'company_name',
+        'company_registration',
         'contact_person',
+        'contact_person_phone',
+        'contact_person_email',
+        'emergency_contact_name',
+        'emergency_contact_phone',
+        'emergency_contact_relationship',
         'notes',
         'preferences',
     ];
@@ -45,6 +52,7 @@ class Customer extends Model
         'status' => 'string',
         'customer_type' => 'string',
         'date_of_birth' => 'date',
+        'age' => 'integer',
         'preferences' => 'json',
     ];
 
@@ -75,6 +83,16 @@ class Customer extends Model
         return $query->where('status', 'active');
     }
 
+    public function scopeInactive($query)
+    {
+        return $query->where('status', 'inactive');
+    }
+
+    public function scopeSuspended($query)
+    {
+        return $query->where('status', 'suspended');
+    }
+
     public function scopeForCompany($query, $companyId)
     {
         return $query->where('company_id', $companyId);
@@ -91,13 +109,44 @@ class Customer extends Model
             $q->where('name', 'like', "%{$search}%")
               ->orWhere('customer_code', 'like', "%{$search}%")
               ->orWhere('phone', 'like', "%{$search}%")
-              ->orWhere('email', 'like', "%{$search}%");
+              ->orWhere('email', 'like', "%{$search}%")
+              ->orWhere('company_name', 'like', "%{$search}%");
         });
     }
 
     public function scopeByType($query, $type)
     {
         return $query->where('customer_type', $type);
+    }
+
+    public function scopeIndividual($query)
+    {
+        return $query->where('customer_type', 'individual');
+    }
+
+    public function scopeBusiness($query)
+    {
+        return $query->where('customer_type', 'business');
+    }
+
+    public function scopeByCity($query, $city)
+    {
+        return $query->where('city', $city);
+    }
+
+    public function scopeByProvince($query, $province)
+    {
+        return $query->where('province', $province);
+    }
+
+    public function scopeWithCreditLimit($query)
+    {
+        return $query->where('credit_limit', '>', 0);
+    }
+
+    public function scopeWithOutstandingBalance($query)
+    {
+        return $query->where('current_balance', '>', 0);
     }
 
     // Accessors
@@ -130,9 +179,57 @@ class Customer extends Model
         return 'Rs. ' . number_format($this->getAvailableCreditAttribute(), 2);
     }
 
-    public function getAgeAttribute(): ?int
+    public function getCalculatedAgeAttribute(): ?int
     {
         return $this->date_of_birth ? Carbon::parse($this->date_of_birth)->age : null;
+    }
+
+    public function getFullAddressAttribute(): string
+    {
+        $address = $this->billing_address;
+        if ($this->city) {
+            $address .= ', ' . $this->city;
+        }
+        if ($this->district) {
+            $address .= ', ' . $this->district;
+        }
+        if ($this->province) {
+            $address .= ', ' . $this->province;
+        }
+        if ($this->postal_code) {
+            $address .= ' ' . $this->postal_code;
+        }
+        return $address;
+    }
+
+    public function getPrimaryContactAttribute(): array
+    {
+        if ($this->customer_type === 'business' && $this->contact_person) {
+            return [
+                'name' => $this->contact_person,
+                'phone' => $this->contact_person_phone ?: $this->phone,
+                'email' => $this->contact_person_email ?: $this->email,
+            ];
+        }
+
+        return [
+            'name' => $this->name,
+            'phone' => $this->phone,
+            'email' => $this->email,
+        ];
+    }
+
+    public function getEmergencyContactAttribute(): ?array
+    {
+        if (!$this->emergency_contact_name) {
+            return null;
+        }
+
+        return [
+            'name' => $this->emergency_contact_name,
+            'phone' => $this->emergency_contact_phone,
+            'relationship' => $this->emergency_contact_relationship,
+        ];
     }
 
     // Methods
@@ -141,9 +238,24 @@ class Customer extends Model
         return $this->status === 'active';
     }
 
+    public function isInactive(): bool
+    {
+        return $this->status === 'inactive';
+    }
+
     public function isSuspended(): bool
     {
         return $this->status === 'suspended';
+    }
+
+    public function isIndividual(): bool
+    {
+        return $this->customer_type === 'individual';
+    }
+
+    public function isBusiness(): bool
+    {
+        return $this->customer_type === 'business';
     }
 
     public function hasAvailableCredit(float $amount = 0): bool
@@ -166,6 +278,13 @@ class Customer extends Model
         return $this->getTotalInvoiceAmount() - $this->getTotalPaidAmount();
     }
 
+    public function updateCurrentBalance(): void
+    {
+        $this->current_balance = $this->getOutstandingBalance();
+        $this->save();
+    }
+
+    // Preference management methods
     public function getPreference(string $key): mixed
     {
         return $this->preferences[$key] ?? null;
@@ -176,5 +295,32 @@ class Customer extends Model
         $preferences = $this->preferences ?? [];
         $preferences[$key] = $value;
         $this->preferences = $preferences;
+        $this->save();
+    }
+
+    public function removePreference(string $key): void
+    {
+        $preferences = $this->preferences ?? [];
+        unset($preferences[$key]);
+        $this->preferences = $preferences;
+        $this->save();
+    }
+
+    // Auto-update age when date_of_birth changes
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($customer) {
+            // Auto-calculate age when date_of_birth is set
+            if ($customer->date_of_birth && $customer->isDirty('date_of_birth')) {
+                $customer->age = Carbon::parse($customer->date_of_birth)->age;
+            }
+
+            // Set shipping address same as billing if empty
+            if (empty($customer->shipping_address)) {
+                $customer->shipping_address = $customer->billing_address;
+            }
+        });
     }
 }

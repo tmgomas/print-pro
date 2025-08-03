@@ -7,12 +7,14 @@ use App\Http\Requests\CreateCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Repositories\CustomerRepository;
 use App\Repositories\BranchRepository;
+use App\Services\CustomerService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\DB;
 
 class CustomerController extends Controller
 {
@@ -20,7 +22,8 @@ class CustomerController extends Controller
 
     public function __construct(
         private CustomerRepository $customerRepository,
-        private BranchRepository $branchRepository
+        private BranchRepository $branchRepository,
+        private CustomerService $customerService
     ) {}
 
     /**
@@ -39,6 +42,9 @@ class CustomerController extends Controller
             'customer_type' => $request->get('customer_type'),
             'branch_id' => $request->get('branch_id'),
             'city' => $request->get('city'),
+            'province' => $request->get('province'),
+            'has_credit_limit' => $request->boolean('has_credit_limit'),
+            'has_outstanding_balance' => $request->boolean('has_outstanding_balance'),
         ];
 
         // Apply branch restriction for non-admin users
@@ -65,13 +71,24 @@ class CustomerController extends Controller
             'filterOptions' => [
                 'branches' => $branches->map(fn($b) => ['value' => $b->id, 'label' => $b->name]),
                 'statuses' => [
-                    ['value' => 'active', 'label' => 'Active'],
-                    ['value' => 'inactive', 'label' => 'Inactive'],
-                    ['value' => 'suspended', 'label' => 'Suspended'],
+                    ['value' => 'active', 'label' => 'Active / සක්‍රිය'],
+                    ['value' => 'inactive', 'label' => 'Inactive / අක්‍රිය'],
+                    ['value' => 'suspended', 'label' => 'Suspended / අත්හිටුවා ඇත'],
                 ],
                 'customerTypes' => [
-                    ['value' => 'individual', 'label' => 'Individual'],
-                    ['value' => 'business', 'label' => 'Business'],
+                    ['value' => 'individual', 'label' => 'Individual / පුද්ගලික'],
+                    ['value' => 'business', 'label' => 'Business / ව්‍යාපාරික'],
+                ],
+                'provinces' => [
+                    ['value' => 'western', 'label' => 'Western Province / බස්නාහිර පළාත'],
+                    ['value' => 'central', 'label' => 'Central Province / මධ්‍යම පළාත'],
+                    ['value' => 'southern', 'label' => 'Southern Province / දකුණු පළාත'],
+                    ['value' => 'northern', 'label' => 'Northern Province / උතුරු පළාත'],
+                    ['value' => 'eastern', 'label' => 'Eastern Province / නැගෙනහිර පළාත'],
+                    ['value' => 'north_western', 'label' => 'North Western Province / වයඹ පළාත'],
+                    ['value' => 'north_central', 'label' => 'North Central Province / උතුරු මැද පළාත'],
+                    ['value' => 'uva', 'label' => 'Uva Province / ඌව පළාත'],
+                    ['value' => 'sabaragamuwa', 'label' => 'Sabaragamuwa Province / සබරගමුව පළාත'],
                 ],
             ],
             'permissions' => [
@@ -79,6 +96,7 @@ class CustomerController extends Controller
                 'canEdit' => $user->can('edit customers'),
                 'canDelete' => $user->can('delete customers'),
                 'canViewAllBranches' => $user->can('view all branches'),
+                'canBulkAction' => $user->can('bulk edit customers'),
             ],
         ]);
     }
@@ -96,21 +114,7 @@ class CustomerController extends Controller
         return Inertia::render('Customers/Create', [
             'branches' => $branches->map(fn($b) => ['value' => $b->id, 'label' => $b->name]),
             'defaultBranchId' => $user->branch_id,
-            'customerTypes' => [
-                ['value' => 'individual', 'label' => 'Individual'],
-                ['value' => 'business', 'label' => 'Business'],
-            ],
-            'provinces' => [
-                ['value' => 'western', 'label' => 'Western Province'],
-                ['value' => 'central', 'label' => 'Central Province'],
-                ['value' => 'southern', 'label' => 'Southern Province'],
-                ['value' => 'northern', 'label' => 'Northern Province'],
-                ['value' => 'eastern', 'label' => 'Eastern Province'],
-                ['value' => 'north_western', 'label' => 'North Western Province'],
-                ['value' => 'north_central', 'label' => 'North Central Province'],
-                ['value' => 'uva', 'label' => 'Uva Province'],
-                ['value' => 'sabaragamuwa', 'label' => 'Sabaragamuwa Province'],
-            ],
+            'formOptions' => $this->getFormOptions(),
         ]);
     }
 
@@ -120,28 +124,24 @@ class CustomerController extends Controller
     public function store(CreateCustomerRequest $request): RedirectResponse
     {
         try {
-            $data = $request->validated();
-            $data['company_id'] = auth()->user()->company_id;
-
-            // Generate unique customer code if not provided
-            if (empty($data['customer_code'])) {
-                $data['customer_code'] = $this->customerRepository->generateUniqueCode($data['company_id']);
-            }
-
-            // Set shipping address same as billing if not provided
-            if (empty($data['shipping_address'])) {
-                $data['shipping_address'] = $data['billing_address'];
-            }
-
-            $customer = $this->customerRepository->create($data);
+            $customer = $this->customerService->createCustomer(
+                $request->validated(),
+                auth()->user()->company_id
+            );
 
             return redirect()->route('customers.show', $customer->id)
-                ->with('success', 'Customer created successfully.');
+                ->with('success', 'Customer created successfully. / ගනුදෙනුකරු සාර්ථකව නිර්මාණය කරන ලදී.');
 
         } catch (\Exception $e) {
+            \Log::error('Customer creation failed', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+                'data' => $request->except(['password'])
+            ]);
+
             return back()
                 ->withInput()
-                ->withErrors(['error' => 'Customer creation failed. Please try again.']);
+                ->withErrors(['error' => 'Customer creation failed. Please try again. / ගනුදෙනුකරු නිර්මාණය අසාර්ථක විය. කරුණාකර නැවත උත්සාහ කරන්න.']);
         }
     }
 
@@ -171,9 +171,7 @@ class CustomerController extends Controller
             ->limit(5)
             ->get();
 
-        $totalInvoices = $customer->invoices()->count();
-        $totalPaid = $customer->payments()->where('status', 'completed')->sum('amount');
-        $outstandingBalance = $customer->getOutstandingBalance();
+        $stats = $this->customerService->getCustomerStatistics($customer);
 
         return Inertia::render('Customers/Show', [
             'customer' => [
@@ -185,6 +183,7 @@ class CustomerController extends Controller
                 'phone' => $customer->phone,
                 'billing_address' => $customer->billing_address,
                 'shipping_address' => $customer->shipping_address,
+                'full_address' => $customer->full_address,
                 'city' => $customer->city,
                 'postal_code' => $customer->postal_code,
                 'district' => $customer->district,
@@ -200,8 +199,14 @@ class CustomerController extends Controller
                 'customer_type' => $customer->customer_type,
                 'date_of_birth' => $customer->date_of_birth?->format('Y-m-d'),
                 'age' => $customer->age,
+                'calculated_age' => $customer->calculated_age,
                 'company_name' => $customer->company_name,
+                'company_registration' => $customer->company_registration,
                 'contact_person' => $customer->contact_person,
+                'contact_person_phone' => $customer->contact_person_phone,
+                'contact_person_email' => $customer->contact_person_email,
+                'primary_contact' => $customer->primary_contact,
+                'emergency_contact' => $customer->emergency_contact,
                 'notes' => $customer->notes,
                 'preferences' => $customer->preferences,
                 'created_at' => $customer->created_at->format('Y-m-d H:i:s'),
@@ -212,12 +217,7 @@ class CustomerController extends Controller
                     'code' => $customer->branch->code,
                 ] : null,
             ],
-            'statistics' => [
-                'total_invoices' => $totalInvoices,
-                'total_amount_invoiced' => $customer->getTotalInvoiceAmount(),
-                'total_paid' => $totalPaid,
-                'outstanding_balance' => $outstandingBalance,
-            ],
+            'statistics' => $stats,
             'recentInvoices' => $recentInvoices->map(fn($invoice) => [
                 'id' => $invoice->id,
                 'invoice_number' => $invoice->invoice_number,
@@ -231,6 +231,7 @@ class CustomerController extends Controller
                 'canDelete' => $user->can('delete customers'),
                 'canViewInvoices' => $user->can('view invoices'),
                 'canCreateInvoice' => $user->can('create invoices'),
+                'canUpdateBalance' => $user->can('update customer balance'),
             ],
         ]);
     }
@@ -274,26 +275,19 @@ class CustomerController extends Controller
                 'customer_type' => $customer->customer_type,
                 'date_of_birth' => $customer->date_of_birth?->format('Y-m-d'),
                 'company_name' => $customer->company_name,
+                'company_registration' => $customer->company_registration,
                 'contact_person' => $customer->contact_person,
+                'contact_person_phone' => $customer->contact_person_phone,
+                'contact_person_email' => $customer->contact_person_email,
+                'emergency_contact_name' => $customer->emergency_contact_name,
+                'emergency_contact_phone' => $customer->emergency_contact_phone,
+                'emergency_contact_relationship' => $customer->emergency_contact_relationship,
                 'notes' => $customer->notes,
+                'preferences' => $customer->preferences,
                 'branch_id' => $customer->branch_id,
             ],
             'branches' => $branches->map(fn($b) => ['value' => $b->id, 'label' => $b->name]),
-            'customerTypes' => [
-                ['value' => 'individual', 'label' => 'Individual'],
-                ['value' => 'business', 'label' => 'Business'],
-            ],
-            'provinces' => [
-                ['value' => 'western', 'label' => 'Western Province'],
-                ['value' => 'central', 'label' => 'Central Province'],
-                ['value' => 'southern', 'label' => 'Southern Province'],
-                ['value' => 'northern', 'label' => 'Northern Province'],
-                ['value' => 'eastern', 'label' => 'Eastern Province'],
-                ['value' => 'north_western', 'label' => 'North Western Province'],
-                ['value' => 'north_central', 'label' => 'North Central Province'],
-                ['value' => 'uva', 'label' => 'Uva Province'],
-                ['value' => 'sabaragamuwa', 'label' => 'Sabaragamuwa Province'],
-            ],
+            'formOptions' => $this->getFormOptions(),
         ]);
     }
 
@@ -310,22 +304,25 @@ class CustomerController extends Controller
                 abort(403, 'You cannot edit this customer.');
             }
 
-            $data = $request->validated();
-
-            // Set shipping address same as billing if not provided
-            if (empty($data['shipping_address'])) {
-                $data['shipping_address'] = $data['billing_address'];
-            }
-
-            $this->customerRepository->update($id, $data);
+            $updatedCustomer = $this->customerService->updateCustomer(
+                $id,
+                $request->validated(),
+                $user->company_id
+            );
 
             return redirect()->route('customers.show', $id)
-                ->with('success', 'Customer updated successfully.');
+                ->with('success', 'Customer updated successfully. / ගනුදෙනුකරු සාර්ථකව යාවත්කාලීන කරන ලදී.');
 
         } catch (\Exception $e) {
+            \Log::error('Customer update failed', [
+                'customer_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
             return back()
                 ->withInput()
-                ->withErrors(['error' => 'Customer update failed. Please try again.']);
+                ->withErrors(['error' => 'Customer update failed. Please try again. / ගනුදෙනුකරු යාවත්කාලීන කිරීම අසාර්ථක විය.']);
         }
     }
 
@@ -345,16 +342,26 @@ class CustomerController extends Controller
 
             // Check if customer has invoices
             if ($customer->invoices()->count() > 0) {
-                return back()->withErrors(['error' => 'Cannot delete customer with existing invoices.']);
+                return back()->withErrors([
+                    'error' => 'Cannot delete customer with existing invoices. / ප්‍රතිදාන සහිත ගනුදෙනුකරු මකා දැමිය නොහැක.'
+                ]);
             }
 
-            $this->customerRepository->delete($id);
+            $this->customerService->deleteCustomer($id);
 
             return redirect()->route('customers.index')
-                ->with('success', 'Customer deleted successfully.');
+                ->with('success', 'Customer deleted successfully. / ගනුදෙනුකරු සාර්ථකව මකා දමන ලදී.');
 
         } catch (\Exception $e) {
-            return back()->withErrors(['error' => 'Customer deletion failed. Please try again.']);
+            \Log::error('Customer deletion failed', [
+                'customer_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->withErrors([
+                'error' => 'Customer deletion failed. Please try again. / ගනුදෙනුකරු මකා දැමීම අසාර්ථක විය.'
+            ]);
         }
     }
 
@@ -373,16 +380,24 @@ class CustomerController extends Controller
             }
 
             $newStatus = $customer->status === 'active' ? 'inactive' : 'active';
-            $this->customerRepository->update($id, ['status' => $newStatus]);
+            $updatedCustomer = $this->customerService->updateCustomerStatus($id, $newStatus);
 
             return response()->json([
                 'success' => true,
-                'status' => $newStatus,
-                'message' => 'Customer status updated successfully.'
+                'status' => $updatedCustomer->status,
+                'message' => 'Customer status updated successfully. / ගනුදෙනුකරුගේ තත්ත්වය සාර්ථකව යාවත්කාලීන කරන ලදී.'
             ]);
 
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Status update failed'], 500);
+            \Log::error('Customer status update failed', [
+                'customer_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Status update failed. / තත්ත්ව යාවත්කාලීන කිරීම අසාර්ථක විය.'
+            ], 500);
         }
     }
 
@@ -419,14 +434,6 @@ class CustomerController extends Controller
                 'to' => $invoices->lastItem(),
             ],
         ]);
-    }
-
-    /**
-     * Get customer invoices
-     */
-    public function invoices(int $id): Response
-    {
-        return $this->orders($id); // Same as orders for now
     }
 
     /**
@@ -470,11 +477,11 @@ class CustomerController extends Controller
     public function updateBalance(Request $request, int $id): JsonResponse
     {
         try {
-            $this->authorize('edit customers');
+            $this->authorize('update customer balance');
 
             $request->validate([
-                'amount' => 'required|numeric|min:0',
-                'operation' => 'required|in:add,subtract',
+                'amount' => 'required|numeric|min:0|max:999999999.99',
+                'operation' => 'required|in:add,subtract,set',
                 'reason' => 'required|string|max:255',
             ]);
 
@@ -485,39 +492,34 @@ class CustomerController extends Controller
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
-            $success = $this->customerRepository->updateBalance(
-                $id, 
-                $request->amount, 
-                $request->operation
+            $updatedCustomer = $this->customerService->updateBalance(
+                $id,
+                $request->amount,
+                $request->operation,
+                $request->reason,
+                $user->id
             );
 
-            if ($success) {
-                // Log the balance update
-                activity()
-                    ->performedOn($customer)
-                    ->causedBy($user)
-                    ->withProperties([
-                        'amount' => $request->amount,
-                        'operation' => $request->operation,
-                        'reason' => $request->reason,
-                        'old_balance' => $customer->current_balance,
-                    ])
-                    ->log('balance_updated');
-
-                $customer->refresh();
-
-                return response()->json([
-                    'success' => true,
-                    'new_balance' => $customer->current_balance,
-                    'formatted_balance' => $customer->formatted_balance,
-                    'message' => 'Customer balance updated successfully.'
-                ]);
-            }
-
-            return response()->json(['error' => 'Balance update failed'], 500);
+            return response()->json([
+                'success' => true,
+                'new_balance' => $updatedCustomer->current_balance,
+                'formatted_balance' => $updatedCustomer->formatted_balance,
+                'available_credit' => $updatedCustomer->available_credit,
+                'formatted_available_credit' => $updatedCustomer->formatted_available_credit,
+                'message' => 'Customer balance updated successfully. / ගනුදෙනුකරුගේ ශේෂය සාර්ථකව යාවත්කාලීන කරන ලදී.'
+            ]);
 
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Balance update failed'], 500);
+            \Log::error('Customer balance update failed', [
+                'customer_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+                'request_data' => $request->all(),
+            ]);
+
+            return response()->json([
+                'error' => 'Balance update failed. / ශේෂ යාවත්කාලීන කිරීම අසාර්ථක විය.'
+            ], 500);
         }
     }
 
@@ -527,17 +529,16 @@ class CustomerController extends Controller
     public function bulkAction(Request $request): JsonResponse
     {
         try {
-            $this->authorize('edit customers');
+            $this->authorize('bulk edit customers');
 
             $request->validate([
-                'action' => 'required|in:activate,deactivate,suspend,delete',
-                'customer_ids' => 'required|array|min:1',
+                'action' => 'required|in:activate,deactivate,suspend,delete,export',
+                'customer_ids' => 'required|array|min:1|max:100',
                 'customer_ids.*' => 'exists:customers,id',
             ]);
 
             $customerIds = $request->customer_ids;
             $action = $request->action;
-
             $user = auth()->user();
 
             // Verify all customers belong to user's company
@@ -547,45 +548,86 @@ class CustomerController extends Controller
                 ->get();
 
             if ($customers->count() !== count($customerIds)) {
-                return response()->json(['error' => 'Some customers not found or unauthorized'], 403);
+                return response()->json([
+                    'error' => 'Some customers not found or unauthorized. / සමහර ගනුදෙනුකරුවන් සොයා ගත නොහැක හෝ අවසර නැත.'
+                ], 403);
             }
 
-            $updated = 0;
-
-            switch ($action) {
-                case 'activate':
-                    $updated = $this->customerRepository->bulkUpdateStatus($customerIds, 'active');
-                    break;
-                case 'deactivate':
-                    $updated = $this->customerRepository->bulkUpdateStatus($customerIds, 'inactive');
-                    break;
-                case 'suspend':
-                    $updated = $this->customerRepository->bulkUpdateStatus($customerIds, 'suspended');
-                    break;
-                case 'delete':
-                    // Check if any customer has invoices
-                    $customersWithInvoices = $customers->filter(fn($c) => $c->invoices()->count() > 0);
-                    if ($customersWithInvoices->count() > 0) {
-                        return response()->json([
-                            'error' => 'Cannot delete customers with existing invoices'
-                        ], 400);
-                    }
-                    
-                    foreach ($customerIds as $customerId) {
-                        $this->customerRepository->delete($customerId);
-                        $updated++;
-                    }
-                    break;
-            }
+            $result = $this->customerService->bulkAction($customerIds, $action, $user->id);
 
             return response()->json([
                 'success' => true,
-                'updated' => $updated,
-                'message' => "Successfully {$action}d {$updated} customers."
+                'updated' => $result['updated'],
+                'message' => $result['message']
             ]);
 
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Bulk action failed'], 500);
+            \Log::error('Customer bulk action failed', [
+                'user_id' => auth()->id(),
+                'action' => $request->action ?? 'unknown',
+                'customer_ids' => $request->customer_ids ?? [],
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Bulk action failed. / තොග ක්‍රියාව අසාර්ථක විය.'
+            ], 500);
         }
+    }
+
+    /**
+     * Export customers to CSV/Excel
+     */
+    public function export(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $this->authorize('export customers');
+
+        $user = auth()->user();
+        $filters = $request->only(['status', 'customer_type', 'branch_id', 'city', 'province']);
+
+        // Apply branch restriction for non-admin users
+        if (!$user->can('view all branches') && $user->branch_id) {
+            $filters['branch_id'] = $user->branch_id;
+        }
+
+        return $this->customerService->exportCustomers($user->company_id, $filters);
+    }
+
+    /**
+     * Get form options for create/edit forms
+     */
+    private function getFormOptions(): array
+    {
+        return [
+            'customerTypes' => [
+                ['value' => 'individual', 'label' => 'Individual / පුද්ගලික'],
+                ['value' => 'business', 'label' => 'Business / ව්‍යාපාරික'],
+            ],
+            'statuses' => [
+                ['value' => 'active', 'label' => 'Active / සක්‍රිය'],
+                ['value' => 'inactive', 'label' => 'Inactive / අක්‍රිය'],
+                ['value' => 'suspended', 'label' => 'Suspended / අත්හිටුවා ඇත'],
+            ],
+            'provinces' => [
+                ['value' => 'western', 'label' => 'Western Province / බස්නාහිර පළාත'],
+                ['value' => 'central', 'label' => 'Central Province / මධ්‍යම පළාත'],
+                ['value' => 'southern', 'label' => 'Southern Province / දකුණු පළාත'],
+                ['value' => 'northern', 'label' => 'Northern Province / උතුරු පළාත'],
+                ['value' => 'eastern', 'label' => 'Eastern Province / නැගෙනහිර පළාත'],
+                ['value' => 'north_western', 'label' => 'North Western Province / වයඹ පළාත'],
+                ['value' => 'north_central', 'label' => 'North Central Province / උතුරු මැද පළාත'],
+                ['value' => 'uva', 'label' => 'Uva Province / ඌව පළාත'],
+                ['value' => 'sabaragamuwa', 'label' => 'Sabaragamuwa Province / සබරගමුව පළාත'],
+            ],
+            'emergencyContactRelationships' => [
+                ['value' => 'spouse', 'label' => 'Spouse / කලත්‍රයා'],
+                ['value' => 'parent', 'label' => 'Parent / මාපියන්'],
+                ['value' => 'child', 'label' => 'Child / දරුවා'],
+                ['value' => 'sibling', 'label' => 'Sibling / සහෝදර සහෝදරිය'],
+                ['value' => 'friend', 'label' => 'Friend / මිතුරා'],
+                ['value' => 'colleague', 'label' => 'Colleague / සගයා'],
+                ['value' => 'other', 'label' => 'Other / වෙනත්'],
+            ],
+        ];
     }
 }
