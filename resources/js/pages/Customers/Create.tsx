@@ -158,6 +158,8 @@ export default function CreateCustomer({ branches, defaultBranchId, formOptions 
         e.preventDefault();
         
         const submitData = { ...data };
+       
+    
         if (shippingSameAsBilling) {
             submitData.shipping_address = data.billing_address;
         }
@@ -274,36 +276,36 @@ export default function CreateCustomer({ branches, defaultBranchId, formOptions 
                                     </div>
 
                                     {/* Name Field */}
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="name">
-                                            {data.customer_type === 'business' ? 'Contact Person Name' : 'Full Name'} *
-                                        </Label>
-                                        <Input
-                                            id="name"
-                                            type="text"
-                                            value={data.name}
-                                            onChange={(e) => setData('name', e.target.value)}
-                                            placeholder={data.customer_type === 'business' ? 'Enter contact person name' : 'Enter full name'}
-                                            required
-                                        />
-                                        <InputError message={errors.name} />
-                                    </div>
-
+                                   
                                     {/* Business Fields */}
                                     {showBusinessFields && (
                                         <>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="contact_person">Contact Person Name *</Label>
+                                            <Input
+                                                id="contact_person"
+                                                value={data.contact_person}
+                                                onChange={(e) => setData('contact_person', e.target.value)}
+                                                placeholder="Enter contact person name"
+                                                required
+                                            />
+                                            <InputError message={errors.contact_person} />
+                                        </div>
                                             <div className="grid gap-2">
-                                                <Label htmlFor="company_name">Company Name *</Label>
-                                                <Input
-                                                    id="company_name"
-                                                    type="text"
-                                                    value={data.company_name}
-                                                    onChange={(e) => setData('company_name', e.target.value)}
-                                                    placeholder="Enter company name"
-                                                    required={showBusinessFields}
-                                                />
-                                                <InputError message={errors.company_name} />
-                                            </div>
+            <Label htmlFor="company_name">Company Name *</Label>
+            <Input
+                id="company_name"
+                type="text"
+                value={data.company_name}
+                onChange={(e) => {
+                    setData('company_name', e.target.value);
+                    setData('name', e.target.value); // Auto-sync to name field
+                }}
+                placeholder="Enter company name"
+                required={showBusinessFields}
+            />
+            <InputError message={errors.company_name} />
+        </div>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 <div className="grid gap-2">
@@ -362,16 +364,27 @@ export default function CreateCustomer({ branches, defaultBranchId, formOptions 
 
                                     {/* Personal Information for Individuals */}
                                     {!showBusinessFields && (
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="date_of_birth">Date of Birth</Label>
+
+                                        <><div className="grid gap-2">
+                                            <Label htmlFor="name">Full Name *</Label>
                                             <Input
-                                                id="date_of_birth"
-                                                type="date"
-                                                value={data.date_of_birth}
-                                                onChange={(e) => setData('date_of_birth', e.target.value)}
-                                            />
-                                            <InputError message={errors.date_of_birth} />
+                                                id="name"
+                                                value={data.name}
+                                                onChange={(e) => setData('name', e.target.value)}
+                                                placeholder="Enter full name"
+                                                required />
+                                            <InputError message={errors.name} />
                                         </div>
+                                        <div className="grid gap-2">
+                                                <Label htmlFor="date_of_birth">Date of Birth</Label>
+                                                <Input
+                                                    id="date_of_birth"
+                                                    type="date"
+                                                    value={data.date_of_birth}
+                                                    onChange={(e) => setData('date_of_birth', e.target.value)} />
+                                                <InputError message={errors.date_of_birth} />
+                                            </div></>
+                                        
                                     )}
 
                                     {/* Contact Information */}
