@@ -1,0 +1,674 @@
+import { useState, useEffect } from 'react';
+import { Head, Link, useForm, router } from '@inertiajs/react';
+import AppLayout from '@/layouts/app-layout';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import InputError from '@/components/input-error';
+import { 
+    ArrowLeft, 
+    Plus, 
+    Trash2, 
+    Calculator, 
+    FileText, 
+    User, 
+    Building2, 
+    Calendar, 
+    DollarSign,
+    Weight,
+    Package,
+    Save,
+    AlertCircle,
+    Info,
+    Eye,
+    Settings
+} from 'lucide-react';
+import { BreadcrumbItem } from '@/types';
+
+// Interfaces
+interface Customer {
+    value: number;
+    label: string;
+    display_name: string;
+    credit_limit: number;
+    current_balance: number;
+    phone?: string;
+    email?: string;
+}
+
+interface Product {
+    value: number;
+    label: string;
+    name: string;
+    base_price: number;
+    weight_per_unit: number;
+    weight_unit: string;
+    tax_rate: number;
+    unit_type: string;
+}
+
+interface Branch {
+    value: number;
+    label: string;
+    name: string;
+    code: string;
+}
+
+interface InvoiceItem {
+    id: string;
+    product_id: number | '';
+    item_description: string;
+    quantity: string;
+    unit_price: string;
+    unit_weight: string;
+    line_total: number;
+    line_weight: number;
+    tax_amount: number;
+    specifications?: string;
+}
+
+interface Props {
+    customers?: Customer[];
+    products?: Product[];
+    branches?: Branch[];
+    default_branch_id?: number;
+}
+
+// Weight pricing calculation (based on documentation)
+const calculateWeightCharge = (totalWeight: number): number => {
+    if (totalWeight <= 1) return 200;
+    if (totalWeight <= 3) return 300;
+    if (totalWeight <= 5) return 400;
+    if (totalWeight <= 10) return 500 + ((totalWeight - 5) * 50); // Additional charges
+    return 750 + ((totalWeight - 10) * 75); // Bulk pricing
+};
+
+export default function CreateInvoice({ 
+    customers = [], 
+    products = [], 
+    branches = [], 
+    default_branch_id 
+}: Props) {
+    const [items, setItems] = useState<InvoiceItem[]>([]);
+    const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+    const [invoiceTotals, setInvoiceTotals] = useState({
+        subtotal: 0,
+        totalWeight: 0,
+        weightCharge: 0,
+        taxAmount: 0,
+        discountAmount: 0,
+        total: 0
+    });
+
+    // Get customer ID from URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const preSelectedCustomerId = urlParams.get('customer');
+
+    const { data, setData, post, processing, errors, reset } = useForm({
+        customer_id: preSelectedCustomerId ? parseInt(preSelectedCustomerId) : '',
+        branch_id: default_branch_id || '',
+        invoice_date: new Date().toISOString().split('T')[0],
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        notes: '',
+        terms_conditions: '',
+        discount_amount: '0',
+        status: 'draft',
+        items: [] as any[]
+    });
+
+    const breadcrumbs: BreadcrumbItem[] = [
+        { title: 'Dashboard', href: '/dashboard' },
+        { title: 'Invoices', href: '/invoices' },
+        { title: 'Create Invoice', href: '/invoices/create' },
+    ];
+
+    // Initialize with pre-selected customer
+    useEffect(() => {
+        if (preSelectedCustomerId && customers.length > 0) {
+            const customer = customers.find(c => c.value === parseInt(preSelectedCustomerId));
+            if (customer) {
+                setSelectedCustomer(customer);
+                setData('customer_id', customer.value);
+            }
+        }
+    }, [preSelectedCustomerId, customers]);
+
+    // Add new item
+    const addItem = () => {
+        const newItem: InvoiceItem = {
+            id: Date.now().toString(),
+            product_id: '',
+            item_description: '',
+            quantity: '1',
+            unit_price: '0',
+            unit_weight: '0',
+            line_total: 0,
+            line_weight: 0,
+            tax_amount: 0,
+            specifications: ''
+        };
+        setItems([...items, newItem]);
+    };
+
+    // Remove item
+    const removeItem = (id: string) => {
+        setItems(items.filter(item => item.id !== id));
+    };
+
+    // Update item
+    const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
+        setItems(items.map(item => {
+            if (item.id === id) {
+                const updatedItem = { ...item, [field]: value };
+                
+                // Auto-fill product details when product is selected
+                if (field === 'product_id' && value && products.length > 0) {
+                    const product = products.find(p => p.value === parseInt(value));
+                    if (product) {
+                        updatedItem.item_description = product.name;
+                        updatedItem.unit_price = product.base_price.toString();
+                        updatedItem.unit_weight = product.weight_per_unit.toString();
+                    }
+                }
+                
+                // Recalculate line totals
+                if (['quantity', 'unit_price', 'unit_weight'].includes(field)) {
+                    const quantity = parseFloat(updatedItem.quantity) || 0;
+                    const unitPrice = parseFloat(updatedItem.unit_price) || 0;
+                    const unitWeight = parseFloat(updatedItem.unit_weight) || 0;
+                    
+                    updatedItem.line_total = quantity * unitPrice;
+                    updatedItem.line_weight = quantity * unitWeight;
+                    
+                    // Calculate tax if product is selected
+                    if (updatedItem.product_id && products.length > 0) {
+                        const product = products.find(p => p.value === parseInt(updatedItem.product_id.toString()));
+                        if (product) {
+                            updatedItem.tax_amount = updatedItem.line_total * (product.tax_rate / 100);
+                        }
+                    }
+                }
+                
+                return updatedItem;
+            }
+            return item;
+        }));
+    };
+
+    // Calculate invoice totals
+    useEffect(() => {
+        const subtotal = items.reduce((sum, item) => sum + item.line_total, 0);
+        const totalWeight = items.reduce((sum, item) => sum + item.line_weight, 0);
+        const weightCharge = calculateWeightCharge(totalWeight);
+        const taxAmount = items.reduce((sum, item) => sum + item.tax_amount, 0);
+        const discountAmount = parseFloat(data.discount_amount) || 0;
+        const total = subtotal + weightCharge + taxAmount - discountAmount;
+
+        setInvoiceTotals({
+            subtotal,
+            totalWeight,
+            weightCharge,
+            taxAmount,
+            discountAmount,
+            total
+        });
+    }, [items, data.discount_amount]);
+
+    // Handle customer selection
+    const handleCustomerChange = (customerId: string) => {
+        if (customers.length > 0) {
+            const customer = customers.find(c => c.value === parseInt(customerId));
+            setSelectedCustomer(customer || null);
+            setData('customer_id', parseInt(customerId));
+        }
+    };
+
+    // Handle form submission
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        const formData = {
+            ...data,
+            items: items.map(item => ({
+                product_id: item.product_id,
+                item_description: item.item_description,
+                quantity: parseFloat(item.quantity),
+                unit_price: parseFloat(item.unit_price),
+                unit_weight: parseFloat(item.unit_weight),
+                specifications: item.specifications
+            })),
+            subtotal: invoiceTotals.subtotal,
+            weight_charge: invoiceTotals.weightCharge,
+            tax_amount: invoiceTotals.taxAmount,
+            total_amount: invoiceTotals.total,
+            total_weight: invoiceTotals.totalWeight
+        };
+
+        post('/invoices', {
+            data: formData,
+            onSuccess: () => {
+                // Redirect will be handled by controller
+            },
+            onError: (errors) => {
+                console.error('Invoice creation failed:', errors);
+            }
+        });
+    };
+
+    return (
+        <AppLayout breadcrumbs={breadcrumbs}>
+            <Head title="Create Invoice" />
+            
+            <div className="space-y-6">
+                {/* Show loading or error state if data is missing */}
+                {(!customers || !products || !branches) && (
+                    <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                            Loading invoice data... If this persists, please refresh the page.
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight">Create Invoice</h1>
+                        <p className="text-muted-foreground">
+                            Create a new invoice for your customer
+                        </p>
+                    </div>
+                    <Button variant="outline" asChild>
+                        <Link href="/invoices">
+                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            Back to Invoices
+                        </Link>
+                    </Button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* Invoice Details */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <FileText className="h-5 w-5" />
+                                Invoice Details
+                            </CardTitle>
+                            <CardDescription>
+                                Basic invoice information and customer selection
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {/* Customer Selection */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="customer">Customer *</Label>
+                                    <Select 
+                                        value={data.customer_id.toString()} 
+                                        onValueChange={handleCustomerChange}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select customer" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {customers && customers.length > 0 ? (
+                                                customers.map((customer) => (
+                                                    <SelectItem key={customer.value} value={customer.value.toString()}>
+                                                        {customer.label}
+                                                    </SelectItem>
+                                                ))
+                                            ) : (
+                                                <SelectItem value="" disabled>No customers available</SelectItem>
+                                            )}
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError message={errors.customer_id} />
+                                </div>
+
+                                {/* Branch Selection */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="branch">Branch *</Label>
+                                    <Select 
+                                        value={data.branch_id.toString()} 
+                                        onValueChange={(value) => setData('branch_id', parseInt(value))}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select branch" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {branches && branches.length > 0 ? (
+                                                branches.map((branch) => (
+                                                    <SelectItem key={branch.value} value={branch.value.toString()}>
+                                                        {branch.label}
+                                                    </SelectItem>
+                                                ))
+                                            ) : (
+                                                <SelectItem value="" disabled>No branches available</SelectItem>
+                                            )}
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError message={errors.branch_id} />
+                                </div>
+
+                                {/* Invoice Date */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="invoice_date">Invoice Date</Label>
+                                    <Input
+                                        type="date"
+                                        value={data.invoice_date}
+                                        onChange={(e) => setData('invoice_date', e.target.value)}
+                                    />
+                                    <InputError message={errors.invoice_date} />
+                                </div>
+
+                                {/* Due Date */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="due_date">Due Date</Label>
+                                    <Input
+                                        type="date"
+                                        value={data.due_date}
+                                        onChange={(e) => setData('due_date', e.target.value)}
+                                    />
+                                    <InputError message={errors.due_date} />
+                                </div>
+
+                                {/* Status */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="status">Status</Label>
+                                    <Select 
+                                        value={data.status} 
+                                        onValueChange={(value) => setData('status', value)}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="draft">Draft</SelectItem>
+                                            <SelectItem value="sent">Sent</SelectItem>
+                                            <SelectItem value="confirmed">Confirmed</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError message={errors.status} />
+                                </div>
+                            </div>
+
+                            {/* Customer Info Display */}
+                            {selectedCustomer && (
+                                <Alert>
+                                    <Info className="h-4 w-4" />
+                                    <AlertDescription>
+                                        <strong>{selectedCustomer.display_name}</strong>
+                                        {selectedCustomer.phone && ` • ${selectedCustomer.phone}`}
+                                        {selectedCustomer.email && ` • ${selectedCustomer.email}`}
+                                        <br />
+                                        Credit Limit: <strong>Rs. {selectedCustomer.credit_limit.toLocaleString()}</strong> • 
+                                        Current Balance: <strong>Rs. {selectedCustomer.current_balance.toLocaleString()}</strong>
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Invoice Items */}
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Package className="h-5 w-5" />
+                                        Invoice Items
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Add products and services to this invoice
+                                    </CardDescription>
+                                </div>
+                                <Button type="button" onClick={addItem} size="sm">
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Add Item
+                                </Button>
+                            </div>
+                        </CardHeader>
+                        <CardContent>
+                            {items.length === 0 ? (
+                                <div className="text-center py-8 text-muted-foreground">
+                                    <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                    <p>No items added yet. Click "Add Item" to get started.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {items.map((item, index) => (
+                                        <div key={item.id} className="border rounded-lg p-4 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="font-medium">Item {index + 1}</h4>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => removeItem(item.id)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+                                                {/* Product Selection */}
+                                                <div className="lg:col-span-2 space-y-2">
+                                                    <Label>Product</Label>
+                                                    <Select 
+                                                        value={item.product_id.toString()} 
+                                                        onValueChange={(value) => updateItem(item.id, 'product_id', parseInt(value))}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Select product" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {products && products.length > 0 ? (
+                                                                products.map((product) => (
+                                                                    <SelectItem key={product.value} value={product.value.toString()}>
+                                                                        {product.label}
+                                                                    </SelectItem>
+                                                                ))
+                                                            ) : (
+                                                                <SelectItem value="" disabled>No products available</SelectItem>
+                                                            )}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+
+                                                {/* Quantity */}
+                                                <div className="space-y-2">
+                                                    <Label>Quantity</Label>
+                                                    <Input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        value={item.quantity}
+                                                        onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
+                                                        placeholder="0"
+                                                    />
+                                                </div>
+
+                                                {/* Unit Price */}
+                                                <div className="space-y-2">
+                                                    <Label>Unit Price</Label>
+                                                    <Input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        value={item.unit_price}
+                                                        onChange={(e) => updateItem(item.id, 'unit_price', e.target.value)}
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+
+                                                {/* Unit Weight */}
+                                                <div className="space-y-2">
+                                                    <Label>Weight (kg)</Label>
+                                                    <Input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        value={item.unit_weight}
+                                                        onChange={(e) => updateItem(item.id, 'unit_weight', e.target.value)}
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+
+                                                {/* Line Total */}
+                                                <div className="space-y-2">
+                                                    <Label>Total</Label>
+                                                    <Input
+                                                        type="text"
+                                                        value={`Rs. ${item.line_total.toFixed(2)}`}
+                                                        readOnly
+                                                        className="bg-muted"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Item Description */}
+                                            <div className="space-y-2">
+                                                <Label>Description</Label>
+                                                <Input
+                                                    value={item.item_description}
+                                                    onChange={(e) => updateItem(item.id, 'item_description', e.target.value)}
+                                                    placeholder="Item description"
+                                                />
+                                            </div>
+
+                                            {/* Item Summary */}
+                                            <div className="flex items-center justify-between text-sm text-muted-foreground bg-muted/50 p-3 rounded">
+                                                <span>Line Weight: {item.line_weight.toFixed(2)} kg</span>
+                                                <span>Tax Amount: Rs. {item.tax_amount.toFixed(2)}</span>
+                                                <span className="font-medium">Total: Rs. {item.line_total.toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Invoice Totals */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Calculator className="h-5 w-5" />
+                                Invoice Summary
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Calculation Breakdown */}
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between">
+                                            <span>Subtotal:</span>
+                                            <span>Rs. {invoiceTotals.subtotal.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Total Weight:</span>
+                                            <span>{invoiceTotals.totalWeight.toFixed(2)} kg</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Weight Charge:</span>
+                                            <span>Rs. {invoiceTotals.weightCharge.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Tax Amount:</span>
+                                            <span>Rs. {invoiceTotals.taxAmount.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Discount:</span>
+                                            <span>Rs. {invoiceTotals.discountAmount.toFixed(2)}</span>
+                                        </div>
+                                        <Separator />
+                                        <div className="flex justify-between text-lg font-bold">
+                                            <span>Total Amount:</span>
+                                            <span>Rs. {invoiceTotals.total.toFixed(2)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Discount Amount */}
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="discount_amount">Discount Amount</Label>
+                                            <Input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={data.discount_amount}
+                                                onChange={(e) => setData('discount_amount', e.target.value)}
+                                                placeholder="0.00"
+                                            />
+                                            <InputError message={errors.discount_amount} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Additional Information */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Additional Information</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="notes">Notes</Label>
+                                <Textarea
+                                    value={data.notes}
+                                    onChange={(e) => setData('notes', e.target.value)}
+                                    placeholder="Add any notes for this invoice..."
+                                    rows={3}
+                                />
+                                <InputError message={errors.notes} />
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <Label htmlFor="terms_conditions">Terms & Conditions</Label>
+                                <Textarea
+                                    value={data.terms_conditions}
+                                    onChange={(e) => setData('terms_conditions', e.target.value)}
+                                    placeholder="Add terms and conditions..."
+                                    rows={3}
+                                />
+                                <InputError message={errors.terms_conditions} />
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Form Actions */}
+                    <div className="flex items-center justify-end space-x-2">
+                        <Button variant="outline" asChild>
+                            <Link href="/invoices">Cancel</Link>
+                        </Button>
+                        <Button type="submit" disabled={processing || items.length === 0}>
+                            {processing ? (
+                                <>Processing...</>
+                            ) : (
+                                <>
+                                    <Save className="mr-2 h-4 w-4" />
+                                    Create Invoice
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                </form>
+            </div>
+        </AppLayout>
+    );
+}
