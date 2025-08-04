@@ -50,19 +50,7 @@ class CustomerRepository extends BaseRepository
     /**
      * Get customers for dropdown
      */
-    public function getForDropdown(int $companyId, ?int $branchId = null): Collection
-    {
-        $query = $this->model
-            ->forCompany($companyId)
-            ->active()
-            ->select('id', 'name', 'customer_code', 'phone', 'customer_type', 'company_name');
-
-        if ($branchId) {
-            $query->forBranch($branchId);
-        }
-
-        return $query->orderBy('name')->get();
-    }
+    
 
     /**
      * Generate unique customer code
@@ -163,4 +151,30 @@ class CustomerRepository extends BaseRepository
     {
         return $this->model->whereIn('id', $customerIds)->update(['status' => $status]);
     }
+
+    // app/Repositories/CustomerRepository.php - getForDropdown method
+public function getForDropdown(int $companyId, ?int $branchId = null): Collection
+{
+    $query = $this->model
+        ->where('company_id', $companyId)
+        ->where('status', 'active')
+        ->select([
+            'id', 
+            'name', 
+            'customer_code', 
+            'phone', 
+            'email',
+            'customer_type', 
+            'company_name', 
+            'credit_limit', 
+            'current_balance'
+        ]);
+
+    if ($branchId) {
+        $query->where('branch_id', $branchId);
+    }
+
+    return $query->orderBy('name')->get();
+}
+
 }

@@ -15,17 +15,17 @@ class BranchRepository extends BaseRepository
     /**
      * Get active branches for dropdown
      */
-    public function getForDropdown(?int $companyId = null): Collection
-    {
-        $query = $this->model->where('status', 'active');
-        
-        if ($companyId) {
-            $query->where('company_id', $companyId);
-        }
-        
-        return $query->orderBy('name')->get(['id', 'name', 'code']); // FIXED: column names
+    // app/Repositories/BranchRepository.php
+public function getForDropdown(?int $companyId = null): Collection
+{
+    $query = $this->model->where('status', 'active');
+    
+    if ($companyId) {
+        $query->where('company_id', $companyId);
     }
-
+    
+    return $query->orderBy('name')->get(['id', 'name', 'code']);
+}
     /**
      * Get branches with filters
      */

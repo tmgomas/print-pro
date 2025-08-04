@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Head, Link, useForm, router } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -84,6 +84,7 @@ interface Props {
     products?: Product[];
     branches?: Branch[];
     default_branch_id?: number;
+    error?: string;
 }
 
 // Weight pricing calculation (based on documentation)
@@ -91,15 +92,16 @@ const calculateWeightCharge = (totalWeight: number): number => {
     if (totalWeight <= 1) return 200;
     if (totalWeight <= 3) return 300;
     if (totalWeight <= 5) return 400;
-    if (totalWeight <= 10) return 500 + ((totalWeight - 5) * 50); // Additional charges
-    return 750 + ((totalWeight - 10) * 75); // Bulk pricing
+    if (totalWeight <= 10) return 500 + ((totalWeight - 5) * 50);
+    return 750 + ((totalWeight - 10) * 75);
 };
 
 export default function CreateInvoice({ 
     customers = [], 
     products = [], 
     branches = [], 
-    default_branch_id 
+    default_branch_id,
+    error 
 }: Props) {
     const [items, setItems] = useState<InvoiceItem[]>([]);
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -159,23 +161,58 @@ export default function CreateInvoice({
             tax_amount: 0,
             specifications: ''
         };
-        setItems([...items, newItem]);
+        
+        const newItems = [...items, newItem];
+        setItems(newItems);
+        
+        // Update form data
+        setData('items', newItems.map(item => ({
+            product_id: item.product_id,
+            item_description: item.item_description,
+            quantity: parseFloat(item.quantity) || 0,
+            unit_price: parseFloat(item.unit_price) || 0,
+            unit_weight: parseFloat(item.unit_weight) || 0,
+            specifications: item.specifications ? 
+                (typeof item.specifications === 'string' ? 
+                    { notes: item.specifications } : 
+                    item.specifications
+                ) : {}
+        })));
+        
+        console.log('Added new item, total items:', newItems.length);
     };
 
     // Remove item
     const removeItem = (id: string) => {
-        setItems(items.filter(item => item.id !== id));
+        const filteredItems = items.filter(item => item.id !== id);
+        setItems(filteredItems);
+        
+        // Update form data
+        setData('items', filteredItems.map(item => ({
+            product_id: item.product_id,
+            item_description: item.item_description,
+            quantity: parseFloat(item.quantity) || 0,
+            unit_price: parseFloat(item.unit_price) || 0,
+            unit_weight: parseFloat(item.unit_weight) || 0,
+            specifications: item.specifications ? 
+                (typeof item.specifications === 'string' ? 
+                    { notes: item.specifications } : 
+                    item.specifications
+                ) : {}
+        })));
+        
+        console.log('Removed item, remaining items:', filteredItems.length);
     };
 
     // Update item
     const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
-        setItems(items.map(item => {
+        const updatedItems = items.map(item => {
             if (item.id === id) {
                 const updatedItem = { ...item, [field]: value };
                 
                 // Auto-fill product details when product is selected
-                if (field === 'product_id' && value && products.length > 0) {
-                    const product = products.find(p => p.value === parseInt(value));
+                if (field === 'product_id' && value) {
+                    const product = products.find(p => p.value === parseInt(value.toString()));
                     if (product) {
                         updatedItem.item_description = product.name;
                         updatedItem.unit_price = product.base_price.toString();
@@ -184,16 +221,13 @@ export default function CreateInvoice({
                 }
                 
                 // Recalculate line totals
-                if (['quantity', 'unit_price', 'unit_weight'].includes(field)) {
+                if (field === 'quantity' || field === 'unit_price') {
                     const quantity = parseFloat(updatedItem.quantity) || 0;
                     const unitPrice = parseFloat(updatedItem.unit_price) || 0;
-                    const unitWeight = parseFloat(updatedItem.unit_weight) || 0;
-                    
                     updatedItem.line_total = quantity * unitPrice;
-                    updatedItem.line_weight = quantity * unitWeight;
                     
-                    // Calculate tax if product is selected
-                    if (updatedItem.product_id && products.length > 0) {
+                    // Calculate tax
+                    if (updatedItem.product_id) {
                         const product = products.find(p => p.value === parseInt(updatedItem.product_id.toString()));
                         if (product) {
                             updatedItem.tax_amount = updatedItem.line_total * (product.tax_rate / 100);
@@ -201,21 +235,60 @@ export default function CreateInvoice({
                     }
                 }
                 
+                if (field === 'quantity' || field === 'unit_weight') {
+                    const quantity = parseFloat(updatedItem.quantity) || 0;
+                    const unitWeight = parseFloat(updatedItem.unit_weight) || 0;
+                    updatedItem.line_weight = quantity * unitWeight;
+                }
+                
                 return updatedItem;
             }
             return item;
-        }));
+        });
+        
+        setItems(updatedItems);
+        
+        // Update form data
+        setData('items', updatedItems.map(item => ({
+            product_id: item.product_id,
+            item_description: item.item_description,
+            quantity: parseFloat(item.quantity) || 0,
+            unit_price: parseFloat(item.unit_price) || 0,
+            unit_weight: parseFloat(item.unit_weight) || 0,
+            specifications: item.specifications ? 
+                (typeof item.specifications === 'string' ? 
+                    { notes: item.specifications } : 
+                    item.specifications
+                ) : {}
+        })));
+        
+        // Trigger totals recalculation
+        calculateTotals(updatedItems);
     };
 
     // Calculate invoice totals
-    useEffect(() => {
-        const subtotal = items.reduce((sum, item) => sum + item.line_total, 0);
-        const totalWeight = items.reduce((sum, item) => sum + item.line_weight, 0);
+    const calculateTotals = (currentItems: InvoiceItem[]) => {
+        let subtotal = 0;
+        let totalWeight = 0;
+        let taxAmount = 0;
+        
+        currentItems.forEach(item => {
+            const quantity = parseFloat(item.quantity) || 0;
+            const unitPrice = parseFloat(item.unit_price) || 0;
+            const unitWeight = parseFloat(item.unit_weight) || 0;
+            
+            const lineTotal = quantity * unitPrice;
+            const lineWeight = quantity * unitWeight;
+            
+            subtotal += lineTotal;
+            totalWeight += lineWeight;
+            taxAmount += item.tax_amount || 0;
+        });
+        
         const weightCharge = calculateWeightCharge(totalWeight);
-        const taxAmount = items.reduce((sum, item) => sum + item.tax_amount, 0);
         const discountAmount = parseFloat(data.discount_amount) || 0;
         const total = subtotal + weightCharge + taxAmount - discountAmount;
-
+        
         setInvoiceTotals({
             subtotal,
             totalWeight,
@@ -224,6 +297,11 @@ export default function CreateInvoice({
             discountAmount,
             total
         });
+    };
+
+    // Auto-calculate totals when items or discount changes
+    useEffect(() => {
+        calculateTotals(items);
     }, [items, data.discount_amount]);
 
     // Handle customer selection
@@ -239,16 +317,38 @@ export default function CreateInvoice({
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
+        // Validation check before submitting
+        if (items.length === 0) {
+            alert('Please add at least one item to the invoice');
+            return;
+        }
+        
+        // Check if all items have required fields
+        const invalidItems = items.filter(item => 
+            !item.product_id || 
+            parseFloat(item.quantity) <= 0 || 
+            parseFloat(item.unit_price) < 0
+        );
+        
+        if (invalidItems.length > 0) {
+            alert('Please fill in all required fields for each item');
+            return;
+        }
+        
         const formData = {
             ...data,
             items: items.map(item => ({
-                product_id: item.product_id,
+                product_id: parseInt(item.product_id.toString()),
                 item_description: item.item_description,
                 quantity: parseFloat(item.quantity),
                 unit_price: parseFloat(item.unit_price),
                 unit_weight: parseFloat(item.unit_weight),
-                specifications: item.specifications
-            })),
+                specifications: item.specifications ? 
+                    (typeof item.specifications === 'string' ? 
+                        { notes: item.specifications } : 
+                        item.specifications
+                    ) : {}
+            })).filter(item => item.product_id > 0),
             subtotal: invoiceTotals.subtotal,
             weight_charge: invoiceTotals.weightCharge,
             tax_amount: invoiceTotals.taxAmount,
@@ -256,10 +356,12 @@ export default function CreateInvoice({
             total_weight: invoiceTotals.totalWeight
         };
 
+        console.log('Submitting invoice data:', formData);
+
         post('/invoices', {
             data: formData,
             onSuccess: () => {
-                // Redirect will be handled by controller
+                console.log('Invoice created successfully');
             },
             onError: (errors) => {
                 console.error('Invoice creation failed:', errors);
@@ -267,13 +369,32 @@ export default function CreateInvoice({
         });
     };
 
+    // Debug function
+    const debugCurrentState = () => {
+        console.log('Current items state:', items);
+        console.log('Current form data:', data);
+        console.log('Items length:', items.length);
+        console.log('Form items length:', data.items.length);
+        console.log('Invoice totals:', invoiceTotals);
+    };
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Create Invoice" />
             
             <div className="space-y-6">
+                {/* Show error if data loading failed */}
+                {error && (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                            {error}
+                        </AlertDescription>
+                    </Alert>
+                )}
+
                 {/* Show loading or error state if data is missing */}
-                {(!customers || !products || !branches) && (
+                {(!customers || !products || !branches) && !error && (
                     <Alert>
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
@@ -281,6 +402,22 @@ export default function CreateInvoice({
                         </AlertDescription>
                     </Alert>
                 )}
+
+                {/* Debug Info (remove in production) */}
+                <div className="mb-4 p-4 bg-gray-100 rounded">
+                    <p><strong>Debug Info:</strong></p>
+                    <p>Items in state: {items.length}</p>
+                    <p>Items in form: {data.items.length}</p>
+                    <p>Customers loaded: {customers.length}</p>
+                    <p>Products loaded: {products.length}</p>
+                    <button 
+                        type="button" 
+                        onClick={debugCurrentState}
+                        className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                    >
+                        Log State
+                    </button>
+                </div>
 
                 {/* Header */}
                 <div className="flex items-center justify-between">
@@ -323,15 +460,14 @@ export default function CreateInvoice({
                                             <SelectValue placeholder="Select customer" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {customers && customers.length > 0 ? (
+                                            {customers && customers.length > 0 ? 
                                                 customers.map((customer) => (
                                                     <SelectItem key={customer.value} value={customer.value.toString()}>
                                                         {customer.label}
                                                     </SelectItem>
-                                                ))
-                                            ) : (
+                                                )) : 
                                                 <SelectItem value="" disabled>No customers available</SelectItem>
-                                            )}
+                                            }
                                         </SelectContent>
                                     </Select>
                                     <InputError message={errors.customer_id} />
@@ -348,18 +484,36 @@ export default function CreateInvoice({
                                             <SelectValue placeholder="Select branch" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {branches && branches.length > 0 ? (
+                                            {branches && branches.length > 0 ? 
                                                 branches.map((branch) => (
                                                     <SelectItem key={branch.value} value={branch.value.toString()}>
                                                         {branch.label}
                                                     </SelectItem>
-                                                ))
-                                            ) : (
+                                                )) : 
                                                 <SelectItem value="" disabled>No branches available</SelectItem>
-                                            )}
+                                            }
                                         </SelectContent>
                                     </Select>
                                     <InputError message={errors.branch_id} />
+                                </div>
+
+                                {/* Status */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="status">Status</Label>
+                                    <Select 
+                                        value={data.status} 
+                                        onValueChange={(value) => setData('status', value)}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="draft">Draft</SelectItem>
+                                            <SelectItem value="pending">Pending</SelectItem>
+                                            <SelectItem value="processing">Processing</SelectItem>
+                                            <SelectItem value="completed">Completed</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
 
                                 {/* Invoice Date */}
@@ -384,37 +538,30 @@ export default function CreateInvoice({
                                     <InputError message={errors.due_date} />
                                 </div>
 
-                                {/* Status */}
+                                {/* Discount Amount */}
                                 <div className="space-y-2">
-                                    <Label htmlFor="status">Status</Label>
-                                    <Select 
-                                        value={data.status} 
-                                        onValueChange={(value) => setData('status', value)}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="draft">Draft</SelectItem>
-                                            <SelectItem value="sent">Sent</SelectItem>
-                                            <SelectItem value="confirmed">Confirmed</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <InputError message={errors.status} />
+                                    <Label htmlFor="discount_amount">Discount Amount (Rs.)</Label>
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={data.discount_amount}
+                                        onChange={(e) => setData('discount_amount', e.target.value)}
+                                        placeholder="0.00"
+                                    />
+                                    <InputError message={errors.discount_amount} />
                                 </div>
                             </div>
 
-                            {/* Customer Info Display */}
+                            {/* Customer Info Alert */}
                             {selectedCustomer && (
                                 <Alert>
-                                    <Info className="h-4 w-4" />
+                                    <User className="h-4 w-4" />
                                     <AlertDescription>
-                                        <strong>{selectedCustomer.display_name}</strong>
-                                        {selectedCustomer.phone && ` • ${selectedCustomer.phone}`}
-                                        {selectedCustomer.email && ` • ${selectedCustomer.email}`}
-                                        <br />
+                                        <strong>{selectedCustomer.display_name}</strong> • 
                                         Credit Limit: <strong>Rs. {selectedCustomer.credit_limit.toLocaleString()}</strong> • 
                                         Current Balance: <strong>Rs. {selectedCustomer.current_balance.toLocaleString()}</strong>
+                                        {selectedCustomer.phone && ` • Phone: ${selectedCustomer.phone}`}
                                     </AlertDescription>
                                 </Alert>
                             )}
@@ -465,7 +612,7 @@ export default function CreateInvoice({
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                                                 {/* Product Selection */}
                                                 <div className="lg:col-span-2 space-y-2">
-                                                    <Label>Product</Label>
+                                                    <Label>Product *</Label>
                                                     <Select 
                                                         value={item.product_id.toString()} 
                                                         onValueChange={(value) => updateItem(item.id, 'product_id', parseInt(value))}
@@ -474,35 +621,34 @@ export default function CreateInvoice({
                                                             <SelectValue placeholder="Select product" />
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            {products && products.length > 0 ? (
+                                                            {products && products.length > 0 ?
                                                                 products.map((product) => (
                                                                     <SelectItem key={product.value} value={product.value.toString()}>
                                                                         {product.label}
                                                                     </SelectItem>
-                                                                ))
-                                                            ) : (
+                                                                )) :
                                                                 <SelectItem value="" disabled>No products available</SelectItem>
-                                                            )}
+                                                            }
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
 
                                                 {/* Quantity */}
                                                 <div className="space-y-2">
-                                                    <Label>Quantity</Label>
+                                                    <Label>Quantity *</Label>
                                                     <Input
                                                         type="number"
                                                         step="0.01"
-                                                        min="0"
+                                                        min="0.01"
                                                         value={item.quantity}
                                                         onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
-                                                        placeholder="0"
+                                                        placeholder="1"
                                                     />
                                                 </div>
 
                                                 {/* Unit Price */}
                                                 <div className="space-y-2">
-                                                    <Label>Unit Price</Label>
+                                                    <Label>Unit Price (Rs.)</Label>
                                                     <Input
                                                         type="number"
                                                         step="0.01"
@@ -529,136 +675,130 @@ export default function CreateInvoice({
                                                 {/* Line Total */}
                                                 <div className="space-y-2">
                                                     <Label>Total</Label>
-                                                    <Input
-                                                        type="text"
-                                                        value={`Rs. ${item.line_total.toFixed(2)}`}
-                                                        readOnly
-                                                        className="bg-muted"
-                                                    />
+                                                    <div className="flex items-center h-10 px-3 border rounded-md bg-muted">
+                                                        Rs. {item.line_total.toFixed(2)}
+                                                    </div>
                                                 </div>
                                             </div>
 
-                                            {/* Item Description */}
+                                            {/* Description */}
                                             <div className="space-y-2">
                                                 <Label>Description</Label>
-                                                <Input
+                                                <Textarea
                                                     value={item.item_description}
                                                     onChange={(e) => updateItem(item.id, 'item_description', e.target.value)}
-                                                    placeholder="Item description"
+                                                    placeholder="Item description..."
+                                                    rows={2}
                                                 />
                                             </div>
 
                                             {/* Item Summary */}
-                                            <div className="flex items-center justify-between text-sm text-muted-foreground bg-muted/50 p-3 rounded">
+                                            <div className="flex items-center justify-between text-sm text-muted-foreground">
                                                 <span>Line Weight: {item.line_weight.toFixed(2)} kg</span>
                                                 <span>Tax Amount: Rs. {item.tax_amount.toFixed(2)}</span>
-                                                <span className="font-medium">Total: Rs. {item.line_total.toFixed(2)}</span>
+                                                <span>Total: Rs. {item.line_total.toFixed(2)}</span>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             )}
-                        </CardContent>
-                    </Card>
-
-                    {/* Invoice Totals */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Calculator className="h-5 w-5" />
-                                Invoice Summary
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Calculation Breakdown */}
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between">
-                                            <span>Subtotal:</span>
-                                            <span>Rs. {invoiceTotals.subtotal.toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>Total Weight:</span>
-                                            <span>{invoiceTotals.totalWeight.toFixed(2)} kg</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>Weight Charge:</span>
-                                            <span>Rs. {invoiceTotals.weightCharge.toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>Tax Amount:</span>
-                                            <span>Rs. {invoiceTotals.taxAmount.toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>Discount:</span>
-                                            <span>Rs. {invoiceTotals.discountAmount.toFixed(2)}</span>
-                                        </div>
-                                        <Separator />
-                                        <div className="flex justify-between text-lg font-bold">
-                                            <span>Total Amount:</span>
-                                            <span>Rs. {invoiceTotals.total.toFixed(2)}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Discount Amount */}
-                                    <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <Label htmlFor="discount_amount">Discount Amount</Label>
-                                            <Input
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                value={data.discount_amount}
-                                                onChange={(e) => setData('discount_amount', e.target.value)}
-                                                placeholder="0.00"
-                                            />
-                                            <InputError message={errors.discount_amount} />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            
+                            <InputError message={errors.items} />
                         </CardContent>
                     </Card>
 
                     {/* Additional Information */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Additional Information</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="notes">Notes</Label>
-                                <Textarea
-                                    value={data.notes}
-                                    onChange={(e) => setData('notes', e.target.value)}
-                                    placeholder="Add any notes for this invoice..."
-                                    rows={3}
-                                />
-                                <InputError message={errors.notes} />
-                            </div>
-                            
-                            <div className="space-y-2">
-                                <Label htmlFor="terms_conditions">Terms & Conditions</Label>
-                                <Textarea
-                                    value={data.terms_conditions}
-                                    onChange={(e) => setData('terms_conditions', e.target.value)}
-                                    placeholder="Add terms and conditions..."
-                                    rows={3}
-                                />
-                                <InputError message={errors.terms_conditions} />
-                            </div>
-                        </CardContent>
-                    </Card>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Notes & Terms */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <FileText className="h-5 w-5" />
+                                    Additional Information
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="notes">Notes</Label>
+                                    <Textarea
+                                        value={data.notes}
+                                        onChange={(e) => setData('notes', e.target.value)}
+                                        placeholder="Internal notes about this invoice..."
+                                        rows={3}
+                                    />
+                                    <InputError message={errors.notes} />
+                                </div>
 
-                    {/* Form Actions */}
-                    <div className="flex items-center justify-end space-x-2">
+                                <div className="space-y-2">
+                                    <Label htmlFor="terms_conditions">Terms & Conditions</Label>
+                                    <Textarea
+                                        value={data.terms_conditions}
+                                        onChange={(e) => setData('terms_conditions', e.target.value)}
+                                        placeholder="Payment terms and conditions..."
+                                        rows={3}
+                                    />
+                                    <InputError message={errors.terms_conditions} />
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Invoice Summary */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <Calculator className="h-5 w-5" />
+                                    Invoice Summary
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span>Subtotal:</span>
+                                        <span>Rs. {invoiceTotals.subtotal.toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Total Weight:</span>
+                                        <span>{invoiceTotals.totalWeight.toFixed(2)} kg</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Weight Charge:</span>
+                                        <span>Rs. {invoiceTotals.weightCharge.toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Tax Amount:</span>
+                                        <span>Rs. {invoiceTotals.taxAmount.toFixed(2)}</span>
+                                    </div>
+                                    {invoiceTotals.discountAmount > 0 && (
+                                        <div className="flex justify-between text-green-600">
+                                            <span>Discount:</span>
+                                            <span>-Rs. {invoiceTotals.discountAmount.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    <Separator />
+                                    <div className="flex justify-between text-lg font-semibold">
+                                        <span>Total Amount:</span>
+                                        <span>Rs. {invoiceTotals.total.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    {/* Submit Button */}
+                    <div className="flex items-center justify-end space-x-4">
                         <Button variant="outline" asChild>
                             <Link href="/invoices">Cancel</Link>
                         </Button>
-                        <Button type="submit" disabled={processing || items.length === 0}>
+                        <Button 
+                            type="submit" 
+                            disabled={processing || items.length === 0}
+                            className="min-w-[120px]"
+                        >
                             {processing ? (
-                                <>Processing...</>
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                    Creating...
+                                </>
                             ) : (
                                 <>
                                     <Save className="mr-2 h-4 w-4" />

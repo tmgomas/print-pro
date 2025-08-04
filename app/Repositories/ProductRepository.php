@@ -54,19 +54,30 @@ class ProductRepository extends BaseRepository
     /**
      * Get products for dropdown
      */
-    public function getForDropdown(int $companyId, ?int $categoryId = null): Collection
-    {
-        $query = $this->model
-            ->forCompany($companyId)
-            ->active()
-            ->select('id', 'name', 'product_code', 'base_price', 'weight_per_unit');
+    // app/Repositories/ProductRepository.php - getForDropdown method
+public function getForDropdown(int $companyId, ?int $categoryId = null): Collection
+{
+    $query = $this->model
+        ->where('company_id', $companyId)
+        ->where('status', 'active')
+        ->select([
+            'id', 
+            'name', 
+            'product_code', 
+            'base_price', 
+            'weight_per_unit',
+            'weight_unit', 
+            'tax_rate', 
+            'unit_type'
+        ]);
 
-        if ($categoryId) {
-            $query->inCategory($categoryId);
-        }
-
-        return $query->orderBy('name')->get();
+    if ($categoryId) {
+        $query->where('category_id', $categoryId);
     }
+
+    return $query->orderBy('name')->get();
+}
+
 
     /**
      * Generate unique product code

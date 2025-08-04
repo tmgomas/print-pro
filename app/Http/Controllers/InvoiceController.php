@@ -86,15 +86,54 @@ class InvoiceController extends Controller
      * Show the form for creating a new invoice
      */
     public function create(): Response
-    {
-        $this->authorize('create invoices');
+{
+    $this->authorize('create invoices');
 
-        $user = auth()->user();
-        $companyId = $user->company_id;
+    $user = auth()->user();
+    $companyId = $user->company_id;
 
-        $customers = $this->customerRepository->getForDropdown($companyId);
-        $products = $this->productRepository->getForDropdown($companyId);
-        $branches = $this->branchRepository->getForDropdown($companyId);
+    try {
+        // Get raw data from repositories
+        $customersData = $this->customerRepository->getForDropdown($companyId);
+        $productsData = $this->productRepository->getForDropdown($companyId);
+        $branchesData = $this->branchRepository->getForDropdown($companyId);
+
+        // Transform customers data for frontend
+        $customers = $customersData->map(function ($customer) {
+            return [
+                'value' => $customer->id,
+                'label' => $customer->name . ' (' . ($customer->customer_code ?? '') . ')',
+                'display_name' => $customer->name,
+                'credit_limit' => $customer->credit_limit ?? 0,
+                'current_balance' => $customer->current_balance ?? 0,
+                'phone' => $customer->phone ?? '',
+                'email' => $customer->email ?? '',
+            ];
+        })->toArray();
+
+        // Transform products data for frontend
+        $products = $productsData->map(function ($product) {
+            return [
+                'value' => $product->id,
+                'label' => $product->name . ' - Rs. ' . number_format($product->base_price ?? 0, 2),
+                'name' => $product->name,
+                'base_price' => $product->base_price ?? 0,
+                'weight_per_unit' => $product->weight_per_unit ?? 0,
+                'weight_unit' => $product->weight_unit ?? 'kg',
+                'tax_rate' => $product->tax_rate ?? 0,
+                'unit_type' => $product->unit_type ?? 'piece',
+            ];
+        })->toArray();
+
+        // Transform branches data for frontend
+        $branches = $branchesData->map(function ($branch) {
+            return [
+                'value' => $branch->id,
+                'label' => $branch->name . ' (' . ($branch->code ?? '') . ')',
+                'name' => $branch->name,
+                'code' => $branch->code ?? '',
+            ];
+        })->toArray();
 
         return Inertia::render('Invoices/Create', [
             'customers' => $customers,
@@ -102,8 +141,23 @@ class InvoiceController extends Controller
             'branches' => $branches,
             'default_branch_id' => $user->branch_id,
         ]);
-    }
 
+    } catch (\Exception $e) {
+        \Log::error('Invoice create page error', [
+            'user_id' => $user->id,
+            'company_id' => $companyId,
+            'error' => $e->getMessage(),
+        ]);
+
+        return Inertia::render('Invoices/Create', [
+            'customers' => [],
+            'products' => [],
+            'branches' => [],
+            'default_branch_id' => $user->branch_id,
+            'error' => 'Failed to load invoice data. Please try again.',
+        ]);
+    }
+}
     /**
      * Store a newly created invoice
      */
