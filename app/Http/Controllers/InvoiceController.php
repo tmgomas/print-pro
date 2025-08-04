@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CreateInvoiceRequest;
 use App\Http\Requests\UpdateInvoiceRequest;
+use App\Http\Requests\StorePaymentRequest;
+
 use App\Repositories\InvoiceRepository;
 use App\Repositories\CustomerRepository;
 use App\Repositories\ProductRepository;
@@ -491,70 +493,59 @@ class InvoiceController extends Controller
     /**
      * Record quick payment for invoice
      */
-    public function recordPayment(Request $request, int $id): JsonResponse
-    {
-        $request->validate([
-            'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|string|in:cash,bank_transfer,online,card,cheque,mobile_payment',
-            'payment_date' => 'required|date|before_or_equal:today',
-            'notes' => 'nullable|string|max:1000',
-            'bank_name' => 'nullable|string|max:100',
-            'transaction_id' => 'nullable|string|max:100',
-        ]);
+   public function recordPayment(StorePaymentRequest $request, int $id): JsonResponse
+{
+    try {
+        $user = auth()->user();
+        
+        $invoice = $this->invoiceRepository->find($id);
+        
+        if (!$invoice || $invoice->company_id !== $user->company_id) {
+            return response()->json(['error' => 'Invoice not found'], 404);
+        }
 
-        try {
-            $user = auth()->user();
-            
-            if (!$user->can('create payments')) {
-                return response()->json(['error' => 'Unauthorized'], 403);
-            }
-
-            $invoice = $this->invoiceRepository->find($id);
-            
-            if (!$invoice || $invoice->company_id !== $user->company_id) {
-                return response()->json(['error' => 'Invoice not found'], 404);
-            }
-
-            // Check remaining balance
-            $paymentSummary = $this->paymentService->getInvoicePaymentSummary($id);
-            if ($request->amount > $paymentSummary['remaining_balance']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payment amount exceeds remaining balance'
-                ], 400);
-            }
-
-            $paymentData = array_merge($request->validated(), [
-                'invoice_id' => $id,
-                'customer_id' => $invoice->customer_id,
-                'branch_id' => $user->branch_id,
-                'received_by' => $user->id,
-                'status' => 'completed', // Quick payments are auto-completed
-                'verification_status' => 'verified',
-            ]);
-
-            $payment = $this->paymentService->createPayment($paymentData);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Payment recorded successfully',
-                'payment' => $payment->load(['invoice', 'customer']),
-                'paymentSummary' => $this->paymentService->getInvoicePaymentSummary($id)
-            ]);
-
-        } catch (\Exception $e) {
-            \Log::error('Quick payment creation failed', [
-                'invoice_id' => $id,
-                'user_id' => auth()->id(),
-                'error' => $e->getMessage(),
-            ]);
-
+        // Check remaining balance
+        $paymentSummary = $this->paymentService->getInvoicePaymentSummary($id);
+        if ($request->amount > $paymentSummary['remaining_balance']) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to record payment: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Payment amount exceeds remaining balance'
+            ], 400);
         }
+
+        // Merge the validated data with additional fields
+        $paymentData = array_merge($request->validated(), [
+            'invoice_id' => $id,
+            'customer_id' => $invoice->customer_id,
+            'branch_id' => $user->branch_id,
+            'received_by' => $user->id,
+            'status' => 'completed', // Quick payments are auto-completed
+            'verification_status' => 'verified',
+        ]);
+
+        $payment = $this->paymentService->createPayment($paymentData);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment recorded successfully',
+            'payment' => $payment->load(['invoice', 'customer']),
+            'paymentSummary' => $this->paymentService->getInvoicePaymentSummary($id)
+        ]);
+
+    } catch (\Exception $e) {
+        \Log::error('Quick payment creation failed', [
+            'invoice_id' => $id,
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+            'request_data' => $request->all(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to record payment: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Duplicate invoice

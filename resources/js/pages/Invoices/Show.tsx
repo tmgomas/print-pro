@@ -492,7 +492,7 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                                             </div>
                                                         </td>
                                                         <td className="text-center py-3">{item.quantity}</td>
-                                                        <td className="text-center py-3">{item.line_weight.toFixed(2)}kg</td>
+                                                      <td className="text-center py-3">{(parseFloat(item.line_weight) || 0).toFixed(2)}kg</td>
                                                         <td className="text-right py-3">{formatCurrency(item.unit_price)}</td>
                                                         <td className="text-right py-3">{formatCurrency(item.line_total)}</td>
                                                     </tr>
@@ -501,7 +501,7 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                             <tfoot className="border-t bg-gray-50">
                                                 <tr>
                                                     <td colSpan={2} className="py-2 font-medium">Subtotal</td>
-                                                    <td className="text-center py-2">{invoice.total_weight.toFixed(2)}kg</td>
+                                                   <td className="text-center py-2">{(parseFloat(invoice.total_weight) || 0).toFixed(2)}kg</td>
                                                     <td></td>
                                                     <td className="text-right py-2 font-medium">{invoice.formatted_subtotal}</td>
                                                 </tr>

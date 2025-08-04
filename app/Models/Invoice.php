@@ -35,6 +35,7 @@ class Invoice extends Model
     ];
 
     protected $casts = [
+        'line_weight' => 'decimal:3',
         'invoice_date' => 'date',
         'due_date' => 'date',
         'subtotal' => 'decimal:2',
@@ -44,6 +45,8 @@ class Invoice extends Model
         'total_amount' => 'decimal:2',
         'total_weight' => 'decimal:3',
         'metadata' => 'json',
+        
+
     ];
 
     protected $attributes = [

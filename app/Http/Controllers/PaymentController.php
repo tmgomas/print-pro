@@ -128,7 +128,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * Store new payment
+     *   new payment
      */
     public function store(StorePaymentRequest $request): RedirectResponse
     {

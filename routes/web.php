@@ -183,6 +183,7 @@ Route::middleware('permission:manage users')->group(function () {
         Route::get('invoices/{id}/pdf', [InvoiceController::class, 'generatePDF'])->name('invoices.pdf');
         Route::post('invoices/{id}/send', [InvoiceController::class, 'sendEmail'])->name('invoices.send');
         Route::patch('invoices/{id}/status', [InvoiceController::class, 'updateStatus'])->name('invoices.update-status');
+    Route::post('invoices/{id}/record-payment', [InvoiceController::class, 'recordPayment'])->name('invoices.record-payment');
     });
 
     /*
@@ -196,7 +197,14 @@ Route::middleware('permission:manage users')->group(function () {
         Route::post('payments/{id}/reject', [PaymentController::class, 'reject'])->name('payments.reject');
         Route::get('payments/{id}/receipt', [PaymentController::class, 'generateReceipt'])->name('payments.receipt');
     });
-
+// Payment Verification Routes
+Route::middleware('permission:manage payments')->group(function () {
+    Route::resource('payment-verifications', PaymentVerificationController::class);
+    Route::post('payment-verifications/{paymentVerification}/verify', [PaymentVerificationController::class, 'verify'])
+        ->name('payment-verifications.verify');
+    Route::post('payment-verifications/{paymentVerification}/reject', [PaymentVerificationController::class, 'reject'])
+        ->name('payment-verifications.reject');
+});
     /*
     |--------------------------------------------------------------------------
     | Production Management Routes
