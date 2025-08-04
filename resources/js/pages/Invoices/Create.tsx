@@ -204,67 +204,77 @@ export default function CreateInvoice({
         console.log('Removed item, remaining items:', filteredItems.length);
     };
 
-    // Update item
-    const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
-        const updatedItems = items.map(item => {
-            if (item.id === id) {
-                const updatedItem = { ...item, [field]: value };
-                
-                // Auto-fill product details when product is selected
-                if (field === 'product_id' && value) {
-                    const product = products.find(p => p.value === parseInt(value.toString()));
-                    if (product) {
-                        updatedItem.item_description = product.name;
-                        updatedItem.unit_price = product.base_price.toString();
-                        updatedItem.unit_weight = product.weight_per_unit.toString();
-                    }
-                }
-                
-                // Recalculate line totals
-                if (field === 'quantity' || field === 'unit_price') {
-                    const quantity = parseFloat(updatedItem.quantity) || 0;
-                    const unitPrice = parseFloat(updatedItem.unit_price) || 0;
-                    updatedItem.line_total = quantity * unitPrice;
+const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
+    const updatedItems = items.map(item => {
+        if (item.id === id) {
+            const updatedItem = { ...item, [field]: value };
+            
+            // Auto-fill product details when product is selected
+            if (field === 'product_id' && value) {
+                const product = products.find(p => p.value === parseInt(value.toString()));
+                if (product) {
+                    updatedItem.item_description = product.name;
+                    updatedItem.unit_price = product.base_price.toString();
                     
-                    // Calculate tax
-                    if (updatedItem.product_id) {
-                        const product = products.find(p => p.value === parseInt(updatedItem.product_id.toString()));
-                        if (product) {
-                            updatedItem.tax_amount = updatedItem.line_total * (product.tax_rate / 100);
-                        }
+                    // 🔥 FIX: Convert weight to kg based on weight_unit
+                    let weightInKg = product.weight_per_unit;
+                    if (product.weight_unit === 'grams' || product.weight_unit === 'g') {
+                        weightInKg = product.weight_per_unit / 1000; // Convert grams to kg
+                    } else if (product.weight_unit === 'lb') {
+                        weightInKg = product.weight_per_unit * 0.453592; // Convert pounds to kg
+                    } else if (product.weight_unit === 'oz') {
+                        weightInKg = product.weight_per_unit * 0.0283495; // Convert ounces to kg
+                    }
+                    // If already in kg, no conversion needed
+                    
+                    updatedItem.unit_weight = weightInKg.toString();
+                    
+                    console.log(`Weight Conversion: ${product.weight_per_unit} ${product.weight_unit} → ${weightInKg} kg`);
+                }
+            }
+            
+            // Recalculate line totals
+            if (field === 'quantity' || field === 'unit_price') {
+                const quantity = parseFloat(updatedItem.quantity) || 0;
+                const unitPrice = parseFloat(updatedItem.unit_price) || 0;
+                updatedItem.line_total = quantity * unitPrice;
+                
+                // Calculate tax
+                if (updatedItem.product_id) {
+                    const product = products.find(p => p.value === parseInt(updatedItem.product_id.toString()));
+                    if (product) {
+                        updatedItem.tax_amount = updatedItem.line_total * (product.tax_rate / 100);
                     }
                 }
-                
-                if (field === 'quantity' || field === 'unit_weight') {
-                    const quantity = parseFloat(updatedItem.quantity) || 0;
-                    const unitWeight = parseFloat(updatedItem.unit_weight) || 0;
-                    updatedItem.line_weight = quantity * unitWeight;
-                }
-                
-                return updatedItem;
             }
-            return item;
-        });
-        
-        setItems(updatedItems);
-        
-        // Update form data
-        setData('items', updatedItems.map(item => ({
-            product_id: item.product_id,
-            item_description: item.item_description,
-            quantity: parseFloat(item.quantity) || 0,
-            unit_price: parseFloat(item.unit_price) || 0,
-            unit_weight: parseFloat(item.unit_weight) || 0,
-            specifications: item.specifications ? 
-                (typeof item.specifications === 'string' ? 
-                    { notes: item.specifications } : 
-                    item.specifications
-                ) : {}
-        })));
-        
-        // Trigger totals recalculation
-        calculateTotals(updatedItems);
-    };
+            
+            if (field === 'quantity' || field === 'unit_weight') {
+                const quantity = parseFloat(updatedItem.quantity) || 0;
+                const unitWeight = parseFloat(updatedItem.unit_weight) || 0;
+                updatedItem.line_weight = quantity * unitWeight;
+            }
+            
+            return updatedItem;
+        }
+        return item;
+    });
+    
+    setItems(updatedItems);
+    
+    // Update form data
+    setData('items', updatedItems.map(item => ({
+        product_id: item.product_id,
+        item_description: item.item_description,
+        quantity: parseFloat(item.quantity) || 0,
+        unit_price: parseFloat(item.unit_price) || 0,
+        unit_weight: parseFloat(item.unit_weight) || 0,
+        specifications: item.specifications ? 
+            (typeof item.specifications === 'string' ? 
+                { notes: item.specifications } : 
+                item.specifications
+            ) : {}
+    })));
+};
 
     // Calculate invoice totals
     const calculateTotals = (currentItems: InvoiceItem[]) => {

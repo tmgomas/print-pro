@@ -9,6 +9,7 @@ use App\Repositories\CustomerRepository;
 use App\Repositories\ProductRepository;
 use App\Repositories\BranchRepository;
 use App\Services\InvoiceService;
+use App\Services\PaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +26,8 @@ class InvoiceController extends Controller
         private CustomerRepository $customerRepository,
         private ProductRepository $productRepository,
         private BranchRepository $branchRepository,
-        private InvoiceService $invoiceService
+        private InvoiceService $invoiceService,
+        private PaymentService $paymentService
     ) {}
 
     /**
@@ -78,6 +80,8 @@ class InvoiceController extends Controller
                 'edit' => $user->can('edit invoices'),
                 'delete' => $user->can('delete invoices'),
                 'view_all_branches' => $user->can('view all branches'),
+                'create_payment' => $user->can('create payments'),
+                'manage_payments' => $user->can('manage payments'),
             ]
         ]);
     }
@@ -86,78 +90,79 @@ class InvoiceController extends Controller
      * Show the form for creating a new invoice
      */
     public function create(): Response
-{
-    $this->authorize('create invoices');
+    {
+        $this->authorize('create invoices');
 
-    $user = auth()->user();
-    $companyId = $user->company_id;
+        $user = auth()->user();
+        $companyId = $user->company_id;
 
-    try {
-        // Get raw data from repositories
-        $customersData = $this->customerRepository->getForDropdown($companyId);
-        $productsData = $this->productRepository->getForDropdown($companyId);
-        $branchesData = $this->branchRepository->getForDropdown($companyId);
+        try {
+            // Get raw data from repositories
+            $customersData = $this->customerRepository->getForDropdown($companyId);
+            $productsData = $this->productRepository->getForDropdown($companyId);
+            $branchesData = $this->branchRepository->getForDropdown($companyId);
 
-        // Transform customers data for frontend
-        $customers = $customersData->map(function ($customer) {
-            return [
-                'value' => $customer->id,
-                'label' => $customer->name . ' (' . ($customer->customer_code ?? '') . ')',
-                'display_name' => $customer->name,
-                'credit_limit' => $customer->credit_limit ?? 0,
-                'current_balance' => $customer->current_balance ?? 0,
-                'phone' => $customer->phone ?? '',
-                'email' => $customer->email ?? '',
-            ];
-        })->toArray();
+            // Transform customers data for frontend
+            $customers = $customersData->map(function ($customer) {
+                return [
+                    'value' => $customer->id,
+                    'label' => $customer->name . ' (' . ($customer->customer_code ?? '') . ')',
+                    'display_name' => $customer->name,
+                    'credit_limit' => $customer->credit_limit ?? 0,
+                    'current_balance' => $customer->current_balance ?? 0,
+                    'phone' => $customer->phone ?? '',
+                    'email' => $customer->email ?? '',
+                ];
+            })->toArray();
 
-        // Transform products data for frontend
-        $products = $productsData->map(function ($product) {
-            return [
-                'value' => $product->id,
-                'label' => $product->name . ' - Rs. ' . number_format($product->base_price ?? 0, 2),
-                'name' => $product->name,
-                'base_price' => $product->base_price ?? 0,
-                'weight_per_unit' => $product->weight_per_unit ?? 0,
-                'weight_unit' => $product->weight_unit ?? 'kg',
-                'tax_rate' => $product->tax_rate ?? 0,
-                'unit_type' => $product->unit_type ?? 'piece',
-            ];
-        })->toArray();
+            // Transform products data for frontend
+            $products = $productsData->map(function ($product) {
+                return [
+                    'value' => $product->id,
+                    'label' => $product->name . ' - Rs. ' . number_format($product->base_price ?? 0, 2),
+                    'name' => $product->name,
+                    'base_price' => $product->base_price ?? 0,
+                    'weight_per_unit' => $product->weight_per_unit ?? 0,
+                    'weight_unit' => $product->weight_unit ?? 'kg',
+                    'tax_rate' => $product->tax_rate ?? 0,
+                    'unit_type' => $product->unit_type ?? 'piece',
+                ];
+            })->toArray();
 
-        // Transform branches data for frontend
-        $branches = $branchesData->map(function ($branch) {
-            return [
-                'value' => $branch->id,
-                'label' => $branch->name . ' (' . ($branch->code ?? '') . ')',
-                'name' => $branch->name,
-                'code' => $branch->code ?? '',
-            ];
-        })->toArray();
+            // Transform branches data for frontend
+            $branches = $branchesData->map(function ($branch) {
+                return [
+                    'value' => $branch->id,
+                    'label' => $branch->name . ' (' . ($branch->code ?? '') . ')',
+                    'name' => $branch->name,
+                    'code' => $branch->code ?? '',
+                ];
+            })->toArray();
 
-        return Inertia::render('Invoices/Create', [
-            'customers' => $customers,
-            'products' => $products,
-            'branches' => $branches,
-            'default_branch_id' => $user->branch_id,
-        ]);
+            return Inertia::render('Invoices/Create', [
+                'customers' => $customers,
+                'products' => $products,
+                'branches' => $branches,
+                'default_branch_id' => $user->branch_id,
+            ]);
 
-    } catch (\Exception $e) {
-        \Log::error('Invoice create page error', [
-            'user_id' => $user->id,
-            'company_id' => $companyId,
-            'error' => $e->getMessage(),
-        ]);
+        } catch (\Exception $e) {
+            \Log::error('Invoice create page error', [
+                'user_id' => $user->id,
+                'company_id' => $companyId,
+                'error' => $e->getMessage(),
+            ]);
 
-        return Inertia::render('Invoices/Create', [
-            'customers' => [],
-            'products' => [],
-            'branches' => [],
-            'default_branch_id' => $user->branch_id,
-            'error' => 'Failed to load invoice data. Please try again.',
-        ]);
+            return Inertia::render('Invoices/Create', [
+                'customers' => [],
+                'products' => [],
+                'branches' => [],
+                'default_branch_id' => $user->branch_id,
+                'error' => 'Failed to load invoice data. Please try again.',
+            ]);
+        }
     }
-}
+
     /**
      * Store a newly created invoice
      */
@@ -187,7 +192,7 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Display the specified invoice
+     * Display the specified invoice with payment information
      */
     public function show(int $id): Response
     {
@@ -209,13 +214,38 @@ class InvoiceController extends Controller
             abort(403, 'You cannot view invoices from other branches.');
         }
 
+        // Get payment summary for this invoice
+        $paymentSummary = $this->paymentService->getInvoicePaymentSummary($invoice->id);
+
+        // Get recent payment activity
+        $recentPayments = $this->paymentService->getRecentPayments($invoice->branch_id, 5);
+
         return Inertia::render('Invoices/Show', [
-            'invoice' => $invoice,
+            'invoice' => $invoice->load([
+                'customer',
+                'branch',
+                'creator',
+                'items.product',
+                'deliveries',
+                'printJobs'
+            ]),
+            'paymentSummary' => $paymentSummary,
+            'recentPayments' => $recentPayments,
             'permissions' => [
                 'edit' => $user->can('edit invoices') && $this->invoiceRepository->canBeModified($id),
                 'delete' => $user->can('delete invoices') && $this->invoiceRepository->canBeDeleted($id),
-                'mark_paid' => $user->can('manage payments'),
+                'create_payment' => $user->can('create payments'),
+                'verify_payment' => $user->can('verify payments'),
+                'manage_payments' => $user->can('manage payments'),
                 'generate_pdf' => $user->can('view invoices'),
+            ],
+            'paymentMethods' => [
+                'cash' => 'Cash',
+                'bank_transfer' => 'Bank Transfer',
+                'online' => 'Online Payment',
+                'card' => 'Card Payment',
+                'cheque' => 'Cheque',
+                'mobile_payment' => 'Mobile Payment',
             ]
         ]);
     }
@@ -427,6 +457,101 @@ class InvoiceController extends Controller
 
             return response()->json([
                 'error' => 'Failed to mark as paid. Please try again. / ගෙවීම් සම්පූර්ණ ලෙස සලකුණු කිරීම අසාර්ථක විය.'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get invoice payment data for AJAX
+     */
+    public function getPaymentData(int $id): JsonResponse
+    {
+        try {
+            $invoice = $this->invoiceRepository->find($id);
+            
+            if (!$invoice || $invoice->company_id !== auth()->user()->company_id) {
+                return response()->json(['error' => 'Invoice not found'], 404);
+            }
+
+            $paymentSummary = $this->paymentService->getInvoicePaymentSummary($id);
+
+            return response()->json([
+                'success' => true,
+                'paymentSummary' => $paymentSummary
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Record quick payment for invoice
+     */
+    public function recordPayment(Request $request, int $id): JsonResponse
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'payment_method' => 'required|string|in:cash,bank_transfer,online,card,cheque,mobile_payment',
+            'payment_date' => 'required|date|before_or_equal:today',
+            'notes' => 'nullable|string|max:1000',
+            'bank_name' => 'nullable|string|max:100',
+            'transaction_id' => 'nullable|string|max:100',
+        ]);
+
+        try {
+            $user = auth()->user();
+            
+            if (!$user->can('create payments')) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            $invoice = $this->invoiceRepository->find($id);
+            
+            if (!$invoice || $invoice->company_id !== $user->company_id) {
+                return response()->json(['error' => 'Invoice not found'], 404);
+            }
+
+            // Check remaining balance
+            $paymentSummary = $this->paymentService->getInvoicePaymentSummary($id);
+            if ($request->amount > $paymentSummary['remaining_balance']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment amount exceeds remaining balance'
+                ], 400);
+            }
+
+            $paymentData = array_merge($request->validated(), [
+                'invoice_id' => $id,
+                'customer_id' => $invoice->customer_id,
+                'branch_id' => $user->branch_id,
+                'received_by' => $user->id,
+                'status' => 'completed', // Quick payments are auto-completed
+                'verification_status' => 'verified',
+            ]);
+
+            $payment = $this->paymentService->createPayment($paymentData);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment recorded successfully',
+                'payment' => $payment->load(['invoice', 'customer']),
+                'paymentSummary' => $this->paymentService->getInvoicePaymentSummary($id)
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Quick payment creation failed', [
+                'invoice_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to record payment: ' . $e->getMessage()
             ], 500);
         }
     }

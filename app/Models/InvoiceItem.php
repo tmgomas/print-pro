@@ -124,25 +124,45 @@ class InvoiceItem extends Model
     }
 
     public function updateFromProduct(): void
-    {
-        if ($this->product) {
-            // Update description if not manually set
-            if (empty($this->item_description)) {
-                $this->item_description = $this->product->name;
+{
+    if ($this->product) {
+        // Update description if not manually set
+        if (empty($this->item_description)) {
+            $this->item_description = $this->product->name;
+        }
+        
+        // Update unit price if not manually set
+        if ($this->unit_price == 0) {
+            $this->unit_price = $this->product->base_price;
+        }
+        
+        // 🔥 FIX: Convert weight to kg based on weight_unit
+        if ($this->unit_weight == 0) {
+            $weightInKg = $this->product->weight_per_unit;
+            
+            // Convert to kg based on weight_unit
+            switch ($this->product->weight_unit) {
+                case 'grams':
+                case 'g':
+                    $weightInKg = $this->product->weight_per_unit / 1000;
+                    break;
+                case 'lb':
+                    $weightInKg = $this->product->weight_per_unit * 0.453592;
+                    break;
+                case 'oz':
+                    $weightInKg = $this->product->weight_per_unit * 0.0283495;
+                    break;
+                case 'kg':
+                default:
+                    // Already in kg, no conversion needed
+                    $weightInKg = $this->product->weight_per_unit;
+                    break;
             }
             
-            // Update unit price if not manually set
-            if ($this->unit_price == 0) {
-                $this->unit_price = $this->product->base_price;
-            }
-            
-            // Update unit weight if not manually set
-            if ($this->unit_weight == 0) {
-                $this->unit_weight = $this->product->weight_per_unit;
-            }
+            $this->unit_weight = $weightInKg;
         }
     }
-
+}
     public function setCustomSpecification(string $key, $value): void
     {
         $specs = $this->specifications ?? [];
