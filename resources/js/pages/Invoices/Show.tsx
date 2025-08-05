@@ -27,7 +27,8 @@ import {
     History,
     AlertCircle,
     CheckCircle,
-    DollarSign
+    DollarSign,
+    LoaderCircle
 } from 'lucide-react';
 
 interface Invoice {
@@ -130,13 +131,16 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
     const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
     const [paymentData, setPaymentData] = useState(paymentSummary);
     
+    // Initialize form with proper default values
     const { data, setData, post, processing, errors, reset } = useForm({
-        amount: '',
-        payment_method: '',
+        amount: paymentSummary.remaining_balance > 0 ? paymentSummary.remaining_balance.toString() : '0',
+        payment_method: 'cash', // Default to cash
         payment_date: new Date().toISOString().split('T')[0],
         notes: '',
         bank_name: '',
         transaction_id: '',
+        gateway_reference: '', // Required for online payments
+        cheque_number: '', // Required for cheques
     });
 
     const statusColors = {
@@ -154,19 +158,112 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
         refunded: 'bg-purple-500'
     };
 
+    // Enhanced payment form handler with proper validation and error handling
     const handleQuickPayment = (e: React.FormEvent) => {
         e.preventDefault();
         
+        // Frontend validation
+        if (!data.amount || parseFloat(data.amount) <= 0) {
+            alert('Please enter a valid payment amount');
+            return;
+        }
+        
+        if (!data.payment_method) {
+            alert('Please select a payment method');
+            return;
+        }
+        
+        // Bank transfer/cheque validation
+        if ((data.payment_method === 'bank_transfer' || data.payment_method === 'cheque') && !data.bank_name) {
+            alert('Bank name is required for bank transfers and cheques');
+            return;
+        }
+        
+        // Online payment validation
+        if (data.payment_method === 'online' && !data.gateway_reference) {
+            alert('Gateway reference is required for online payments');
+            return;
+        }
+        
+        // Cheque validation
+        if (data.payment_method === 'cheque' && !data.cheque_number) {
+            alert('Cheque number is required for cheque payments');
+            return;
+        }
+        
+        console.log('=== PAYMENT FORM SUBMIT ===');
+        console.log('Form data:', data);
+        console.log('Invoice ID:', invoice.id);
+        console.log('Route:', route('invoices.record-payment', invoice.id));
+        
+        // Use Inertia's post method for form submission
         post(route('invoices.record-payment', invoice.id), {
-            onSuccess: (response: any) => {
-                setPaymentData(response.props.paymentSummary);
+            preserveState: true,
+            preserveScroll: true,
+            onSuccess: (page: any) => {
+                console.log('Payment success:', page);
+                
+                // Check if response has payment summary data
+                if (page.props && page.props.paymentSummary) {
+                    setPaymentData(page.props.paymentSummary);
+                }
+                
+                // Handle different response formats
+                if (page.props && page.props.flash && page.props.flash.success) {
+                    alert(page.props.flash.success);
+                }
+                
                 setIsPaymentDialogOpen(false);
-                reset();
+                reset({
+                    amount: '',
+                    payment_method: 'cash',
+                    payment_date: new Date().toISOString().split('T')[0],
+                    notes: '',
+                    bank_name: '',
+                    transaction_id: '',
+                    gateway_reference: '',
+                    cheque_number: '',
+                });
+                
+                // Refresh the page to show updated payment data
+                window.location.reload();
             },
             onError: (errors) => {
                 console.error('Payment failed:', errors);
+                
+                // Display specific validation errors
+                Object.keys(errors).forEach(field => {
+                    if (errors[field]) {
+                        console.error(`${field} error:`, errors[field]);
+                    }
+                });
+                
+                // Show first error message
+                const firstError = Object.values(errors)[0];
+                if (firstError) {
+                    alert(`Payment Error: ${firstError}`);
+                }
+            },
+            onFinish: () => {
+                console.log('Payment request finished');
             }
         });
+    };
+
+    // Payment method change handler
+    const handlePaymentMethodChange = (value: string) => {
+        setData('payment_method', value);
+        
+        // Clear conditional fields when method changes
+        if (value !== 'bank_transfer' && value !== 'cheque') {
+            setData('bank_name', '');
+        }
+        if (value !== 'online') {
+            setData('gateway_reference', '');
+        }
+        if (value !== 'cheque') {
+            setData('cheque_number', '');
+        }
     };
 
     const handleVerifyPayment = (paymentId: number) => {
@@ -262,19 +359,30 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                     </DialogTrigger>
                                     <DialogContent className="sm:max-w-md">
                                         <DialogHeader>
-                                            <DialogTitle>Record Payment</DialogTitle>
+                                            <DialogTitle>Record Payment for Invoice {invoice.invoice_number}</DialogTitle>
                                         </DialogHeader>
+                                        
+                                        {/* Show remaining balance info */}
+                                        <Alert className="mb-4">
+                                            <AlertCircle className="h-4 w-4" />
+                                            <AlertDescription>
+                                                Remaining Balance: <strong>{formatCurrency(paymentData.remaining_balance)}</strong>
+                                            </AlertDescription>
+                                        </Alert>
+
                                         <form onSubmit={handleQuickPayment} className="space-y-4">
                                             <div>
-                                                <Label htmlFor="amount">Amount</Label>
+                                                <Label htmlFor="amount">Payment Amount *</Label>
                                                 <Input
                                                     id="amount"
                                                     type="number"
                                                     step="0.01"
+                                                    min="0.01"
                                                     max={paymentData.remaining_balance}
                                                     value={data.amount}
                                                     onChange={(e) => setData('amount', e.target.value)}
                                                     placeholder={`Max: ${formatCurrency(paymentData.remaining_balance)}`}
+                                                    className={errors.amount ? 'border-red-500' : ''}
                                                     required
                                                 />
                                                 {errors.amount && (
@@ -283,12 +391,12 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                             </div>
 
                                             <div>
-                                                <Label htmlFor="payment_method">Payment Method</Label>
+                                                <Label htmlFor="payment_method">Payment Method *</Label>
                                                 <Select
                                                     value={data.payment_method}
-                                                    onValueChange={(value) => setData('payment_method', value)}
+                                                    onValueChange={handlePaymentMethodChange}
                                                 >
-                                                    <SelectTrigger>
+                                                    <SelectTrigger className={errors.payment_method ? 'border-red-500' : ''}>
                                                         <SelectValue placeholder="Select payment method" />
                                                     </SelectTrigger>
                                                     <SelectContent>
@@ -305,12 +413,14 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                             </div>
 
                                             <div>
-                                                <Label htmlFor="payment_date">Payment Date</Label>
+                                                <Label htmlFor="payment_date">Payment Date *</Label>
                                                 <Input
                                                     id="payment_date"
                                                     type="date"
                                                     value={data.payment_date}
                                                     onChange={(e) => setData('payment_date', e.target.value)}
+                                                    max={new Date().toISOString().split('T')[0]}
+                                                    className={errors.payment_date ? 'border-red-500' : ''}
                                                     required
                                                 />
                                                 {errors.payment_date && (
@@ -318,17 +428,54 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                                 )}
                                             </div>
 
+                                            {/* Conditional fields based on payment method */}
                                             {(data.payment_method === 'bank_transfer' || data.payment_method === 'cheque') && (
                                                 <div>
-                                                    <Label htmlFor="bank_name">Bank Name</Label>
+                                                    <Label htmlFor="bank_name">Bank Name *</Label>
                                                     <Input
                                                         id="bank_name"
                                                         value={data.bank_name}
                                                         onChange={(e) => setData('bank_name', e.target.value)}
                                                         placeholder="Enter bank name"
+                                                        className={errors.bank_name ? 'border-red-500' : ''}
+                                                        required
                                                     />
                                                     {errors.bank_name && (
                                                         <p className="text-sm text-red-600 mt-1">{errors.bank_name}</p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {data.payment_method === 'online' && (
+                                                <div>
+                                                    <Label htmlFor="gateway_reference">Gateway Reference *</Label>
+                                                    <Input
+                                                        id="gateway_reference"
+                                                        value={data.gateway_reference}
+                                                        onChange={(e) => setData('gateway_reference', e.target.value)}
+                                                        placeholder="Enter gateway reference"
+                                                        className={errors.gateway_reference ? 'border-red-500' : ''}
+                                                        required
+                                                    />
+                                                    {errors.gateway_reference && (
+                                                        <p className="text-sm text-red-600 mt-1">{errors.gateway_reference}</p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {data.payment_method === 'cheque' && (
+                                                <div>
+                                                    <Label htmlFor="cheque_number">Cheque Number *</Label>
+                                                    <Input
+                                                        id="cheque_number"
+                                                        value={data.cheque_number}
+                                                        onChange={(e) => setData('cheque_number', e.target.value)}
+                                                        placeholder="Enter cheque number"
+                                                        className={errors.cheque_number ? 'border-red-500' : ''}
+                                                        required
+                                                    />
+                                                    {errors.cheque_number && (
+                                                        <p className="text-sm text-red-600 mt-1">{errors.cheque_number}</p>
                                                     )}
                                                 </div>
                                             )}
@@ -340,6 +487,7 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                                     value={data.transaction_id}
                                                     onChange={(e) => setData('transaction_id', e.target.value)}
                                                     placeholder="Enter transaction ID"
+                                                    className={errors.transaction_id ? 'border-red-500' : ''}
                                                 />
                                                 {errors.transaction_id && (
                                                     <p className="text-sm text-red-600 mt-1">{errors.transaction_id}</p>
@@ -354,6 +502,7 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                                     onChange={(e) => setData('notes', e.target.value)}
                                                     placeholder="Add payment notes"
                                                     rows={3}
+                                                    className={errors.notes ? 'border-red-500' : ''}
                                                 />
                                                 {errors.notes && (
                                                     <p className="text-sm text-red-600 mt-1">{errors.notes}</p>
@@ -365,11 +514,22 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                                     type="button"
                                                     variant="outline"
                                                     onClick={() => setIsPaymentDialogOpen(false)}
+                                                    disabled={processing}
                                                 >
                                                     Cancel
                                                 </Button>
-                                                <Button type="submit" disabled={processing}>
-                                                    {processing ? 'Recording...' : 'Record Payment'}
+                                                <Button 
+                                                    type="submit" 
+                                                    disabled={processing || !data.amount || !data.payment_method}
+                                                >
+                                                    {processing ? (
+                                                        <>
+                                                            <LoaderCircle className="h-4 w-4 animate-spin mr-2" />
+                                                            Recording Payment...
+                                                        </>
+                                                    ) : (
+                                                        'Record Payment'
+                                                    )}
                                                 </Button>
                                             </div>
                                         </form>
@@ -492,7 +652,7 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                                             </div>
                                                         </td>
                                                         <td className="text-center py-3">{item.quantity}</td>
-                                                      <td className="text-center py-3">{(parseFloat(item.line_weight) || 0).toFixed(2)}kg</td>
+                                                        <td className="text-center py-3">{(parseFloat(item.line_weight) || 0).toFixed(2)}kg</td>
                                                         <td className="text-right py-3">{formatCurrency(item.unit_price)}</td>
                                                         <td className="text-right py-3">{formatCurrency(item.line_total)}</td>
                                                     </tr>
@@ -501,7 +661,7 @@ export default function InvoiceShow({ invoice, paymentSummary, recentPayments, p
                                             <tfoot className="border-t bg-gray-50">
                                                 <tr>
                                                     <td colSpan={2} className="py-2 font-medium">Subtotal</td>
-                                                   <td className="text-center py-2">{(parseFloat(invoice.total_weight) || 0).toFixed(2)}kg</td>
+                                                    <td className="text-center py-2">{(parseFloat(invoice.total_weight) || 0).toFixed(2)}kg</td>
                                                     <td></td>
                                                     <td className="text-right py-2 font-medium">{invoice.formatted_subtotal}</td>
                                                 </tr>

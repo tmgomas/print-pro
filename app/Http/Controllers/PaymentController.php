@@ -21,11 +21,8 @@ class PaymentController extends Controller
     public function __construct(PaymentService $paymentService)
     {
         $this->paymentService = $paymentService;
-        $this->middleware('auth');
-        $this->middleware('can:view payments')->only(['index', 'show']);
-        $this->middleware('can:create payments')->only(['create', 'store']);
-        $this->middleware('can:update payments')->only(['edit', 'update']);
-        $this->middleware('can:verify payments')->only(['verify', 'reject']);
+        // $this->middleware('auth');
+       
     }
 
     /**

@@ -57,7 +57,7 @@ class PaymentService extends BaseService
                 $this->updateInvoicePaymentStatus($payment->invoice_id);
 
                 // Fire payment created event
-                event(new PaymentCreated($payment));
+                // event(new PaymentCreated($payment));
 
                 return $payment;
             });

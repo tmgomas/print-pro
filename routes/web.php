@@ -14,8 +14,9 @@ use App\Http\Controllers\BranchController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\OrderController;
-use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\InvoiceController; // ✅ This should be present
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PaymentVerificationController; // ✅ Add this if missing
 use App\Http\Controllers\ProductionController;
 use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\ReportController;
@@ -57,55 +58,33 @@ Route::middleware('auth')->group(function () {
     // Logout
     Route::post('logout', [AuthController::class, 'logout'])->name('logout');
 
-    // Email Verification Routes
-    Route::get('verify-email', [AuthController::class, 'verificationNotice'])->name('verification.notice');
-    Route::get('verify-email/{id}/{hash}', [VerifyEmailController::class, '__invoke'])
-        ->middleware(['signed', 'throttle:6,1'])
-        ->name('verification.verify');
-    Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
-        ->middleware('throttle:6,1')
-        ->name('verification.send');
+    // Email Verification
+    Route::get('verify-email', [VerifyEmailController::class, '__invoke'])->name('verification.notice');
+    Route::get('verify-email/{id}/{hash}', [VerifyEmailController::class, 'verify'])->name('verification.verify');
+    Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store'])->name('verification.send');
 
     // Password Confirmation
     Route::get('confirm-password', [ConfirmablePasswordController::class, 'show'])->name('password.confirm');
     Route::post('confirm-password', [ConfirmablePasswordController::class, 'store']);
-});
 
-/*
-|--------------------------------------------------------------------------
-| Protected Routes (Authenticated Users)
-|--------------------------------------------------------------------------
-*/
-Route::middleware(['auth'])->group(function () {
-    
     /*
     |--------------------------------------------------------------------------
-    | Single Dashboard Route - All users go here
+    | Dashboard Routes
     |--------------------------------------------------------------------------
     */
-    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    
-    // Dashboard AJAX routes for widgets and data
-    Route::get('dashboard/widget/{widget}', [DashboardController::class, 'getWidgetData'])->name('dashboard.widget');
-    Route::post('dashboard/settings', [DashboardController::class, 'updateWidgetSettings'])->name('dashboard.settings');
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     /*
     |--------------------------------------------------------------------------
     | User Management Routes
     |--------------------------------------------------------------------------
     */
-    // routes/web.php - Line 90-99 wala
-Route::middleware('permission:manage users')->group(function () {
-    Route::resource('users', UserManagementController::class);
-    Route::post('users/{user}/activate', [UserManagementController::class, 'activate'])->name('users.activate');
-    Route::post('users/{user}/deactivate', [UserManagementController::class, 'deactivate'])->name('users.deactivate');
-    Route::post('users/{user}/suspend', [UserManagementController::class, 'suspend'])->name('users.suspend');
-    Route::post('users/bulk-action', [UserManagementController::class, 'bulkAction'])->name('users.bulk-action');   
-    
-    // MOVE THIS ABOVE the resource route
-    Route::get('ajax/branches', [UserManagementController::class, 'getBranches'])->name('ajax.branches');
-});
-
+    Route::middleware('permission:manage users')->group(function () {
+        Route::resource('users', UserManagementController::class);
+        Route::patch('users/{user}/activate', [UserManagementController::class, 'activate'])->name('users.activate');
+        Route::patch('users/{user}/deactivate', [UserManagementController::class, 'deactivate'])->name('users.deactivate');
+        Route::patch('users/{user}/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -114,11 +93,8 @@ Route::middleware('permission:manage users')->group(function () {
     */
     Route::middleware('permission:manage companies')->group(function () {
         Route::resource('companies', CompanyController::class);
-        Route::patch('companies/{id}/toggle-status', [CompanyController::class, 'toggleStatus'])->name('companies.toggle-status');
-        Route::get('companies/{id}/branches', [CompanyController::class, 'branches'])->name('companies.branches');
-        Route::get('companies/{id}/users', [CompanyController::class, 'users'])->name('companies.users');
-        Route::get('companies/{id}/settings', [CompanyController::class, 'settings'])->name('companies.settings');
-        Route::put('companies/{id}/settings', [CompanyController::class, 'updateSettings'])->name('companies.update-settings');
+        Route::patch('companies/{company}/activate', [CompanyController::class, 'activate'])->name('companies.activate');
+        Route::patch('companies/{company}/deactivate', [CompanyController::class, 'deactivate'])->name('companies.deactivate');
     });
 
     /*
@@ -128,10 +104,8 @@ Route::middleware('permission:manage users')->group(function () {
     */
     Route::middleware('permission:manage branches')->group(function () {
         Route::resource('branches', BranchController::class);
-        Route::patch('branches/{id}/toggle-status', [BranchController::class, 'toggleStatus'])->name('branches.toggle-status');
-        Route::get('branches/{id}/users', [BranchController::class, 'users'])->name('branches.users');
-        Route::get('branches/{id}/settings', [BranchController::class, 'settings'])->name('branches.settings');
-        Route::put('branches/{id}/settings', [BranchController::class, 'updateSettings'])->name('branches.update-settings');
+        Route::patch('branches/{branch}/activate', [BranchController::class, 'activate'])->name('branches.activate');
+        Route::patch('branches/{branch}/deactivate', [BranchController::class, 'deactivate'])->name('branches.deactivate');
     });
 
     /*
@@ -141,10 +115,9 @@ Route::middleware('permission:manage users')->group(function () {
     */
     Route::middleware('permission:manage products')->group(function () {
         Route::resource('products', ProductController::class);
-        Route::patch('products/{id}/toggle-status', [ProductController::class, 'toggleStatus'])->name('products.toggle-status');
-        Route::post('products/bulk-action', [ProductController::class, 'bulkAction'])->name('products.bulk-action');
-        Route::get('products/{id}/pricing', [ProductController::class, 'pricing'])->name('products.pricing');
-        Route::put('products/{id}/pricing', [ProductController::class, 'updatePricing'])->name('products.update-pricing');
+        Route::patch('products/{product}/activate', [ProductController::class, 'activate'])->name('products.activate');
+        Route::patch('products/{product}/deactivate', [ProductController::class, 'deactivate'])->name('products.deactivate');
+        Route::get('products/{product}/specifications', [ProductController::class, 'getSpecifications'])->name('products.specifications');
     });
 
     /*
@@ -154,10 +127,9 @@ Route::middleware('permission:manage users')->group(function () {
     */
     Route::middleware('permission:manage customers')->group(function () {
         Route::resource('customers', CustomerController::class);
-        Route::patch('customers/{id}/toggle-status', [CustomerController::class, 'toggleStatus'])->name('customers.toggle-status');
-        Route::get('customers/{id}/orders', [CustomerController::class, 'orders'])->name('customers.orders');
-        Route::get('customers/{id}/invoices', [CustomerController::class, 'invoices'])->name('customers.invoices');
-        Route::get('customers/{id}/payments', [CustomerController::class, 'payments'])->name('customers.payments');
+        Route::patch('customers/{customer}/activate', [CustomerController::class, 'activate'])->name('customers.activate');
+        Route::patch('customers/{customer}/deactivate', [CustomerController::class, 'deactivate'])->name('customers.deactivate');
+        Route::get('customers/{customer}/credit-history', [CustomerController::class, 'getCreditHistory'])->name('customers.credit-history');
     });
 
     /*
@@ -167,10 +139,8 @@ Route::middleware('permission:manage users')->group(function () {
     */
     Route::middleware('permission:manage orders')->group(function () {
         Route::resource('orders', OrderController::class);
-        Route::patch('orders/{id}/status', [OrderController::class, 'updateStatus'])->name('orders.update-status');
-        Route::post('orders/{id}/duplicate', [OrderController::class, 'duplicate'])->name('orders.duplicate');
-        Route::get('orders/{id}/invoice', [OrderController::class, 'generateInvoice'])->name('orders.generate-invoice');
-        Route::post('orders/bulk-action', [OrderController::class, 'bulkAction'])->name('orders.bulk-action');
+        Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.update-status');
+        Route::post('orders/{order}/convert-to-invoice', [OrderController::class, 'convertToInvoice'])->name('orders.convert-to-invoice');
     });
 
     /*
@@ -183,7 +153,10 @@ Route::middleware('permission:manage users')->group(function () {
         Route::get('invoices/{id}/pdf', [InvoiceController::class, 'generatePDF'])->name('invoices.pdf');
         Route::post('invoices/{id}/send', [InvoiceController::class, 'sendEmail'])->name('invoices.send');
         Route::patch('invoices/{id}/status', [InvoiceController::class, 'updateStatus'])->name('invoices.update-status');
-    Route::post('invoices/{id}/record-payment', [InvoiceController::class, 'recordPayment'])->name('invoices.record-payment');
+        Route::post('invoices/{id}/record-payment', [InvoiceController::class, 'recordPayment'])->name('invoices.record-payment');
+        Route::post('invoices/{id}/duplicate', [InvoiceController::class, 'duplicate'])->name('invoices.duplicate');
+        Route::get('invoices/{id}/api', [InvoiceController::class, 'apiShow'])->name('invoices.api-show');
+        Route::post('invoices/bulk-action', [InvoiceController::class, 'bulkAction'])->name('invoices.bulk-action');
     });
 
     /*
@@ -197,24 +170,29 @@ Route::middleware('permission:manage users')->group(function () {
         Route::post('payments/{id}/reject', [PaymentController::class, 'reject'])->name('payments.reject');
         Route::get('payments/{id}/receipt', [PaymentController::class, 'generateReceipt'])->name('payments.receipt');
     });
-// Payment Verification Routes
-Route::middleware('permission:manage payments')->group(function () {
-    Route::resource('payment-verifications', PaymentVerificationController::class);
-    Route::post('payment-verifications/{paymentVerification}/verify', [PaymentVerificationController::class, 'verify'])
-        ->name('payment-verifications.verify');
-    Route::post('payment-verifications/{paymentVerification}/reject', [PaymentVerificationController::class, 'reject'])
-        ->name('payment-verifications.reject');
-});
+
+    /*
+    |--------------------------------------------------------------------------
+    | Payment Verification Routes
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('permission:manage payments')->group(function () {
+        Route::resource('payment-verifications', PaymentVerificationController::class);
+        Route::post('payment-verifications/{paymentVerification}/verify', [PaymentVerificationController::class, 'verify'])
+            ->name('payment-verifications.verify');
+        Route::post('payment-verifications/{paymentVerification}/reject', [PaymentVerificationController::class, 'reject'])
+            ->name('payment-verifications.reject');
+    });
+
     /*
     |--------------------------------------------------------------------------
     | Production Management Routes
     |--------------------------------------------------------------------------
     */
     Route::middleware('permission:manage production')->group(function () {
-        Route::resource('production', ProductionController::class);
-        Route::patch('production/{id}/status', [ProductionController::class, 'updateStatus'])->name('production.update-status');
-        Route::get('production/queue', [ProductionController::class, 'queue'])->name('production.queue');
-        Route::post('production/{id}/assign', [ProductionController::class, 'assignStaff'])->name('production.assign');
+        Route::resource('productions', ProductionController::class);
+        Route::patch('productions/{production}/status', [ProductionController::class, 'updateStatus'])->name('productions.update-status');
+        Route::post('productions/{production}/assign', [ProductionController::class, 'assignStaff'])->name('productions.assign');
     });
 
     /*
@@ -222,12 +200,11 @@ Route::middleware('permission:manage payments')->group(function () {
     | Delivery Management Routes
     |--------------------------------------------------------------------------
     */
-    Route::middleware('permission:manage delivery')->group(function () {
-        Route::resource('delivery', DeliveryController::class);
-        Route::patch('delivery/{id}/status', [DeliveryController::class, 'updateStatus'])->name('delivery.update-status');
-        Route::get('delivery/schedule', [DeliveryController::class, 'schedule'])->name('delivery.schedule');
-        Route::post('delivery/{id}/assign-driver', [DeliveryController::class, 'assignDriver'])->name('delivery.assign-driver');
-        Route::get('delivery/{id}/track', [DeliveryController::class, 'track'])->name('delivery.track');
+    Route::middleware('permission:manage deliveries')->group(function () {
+        Route::resource('deliveries', DeliveryController::class);
+        Route::patch('deliveries/{delivery}/status', [DeliveryController::class, 'updateStatus'])->name('deliveries.update-status');
+        Route::post('deliveries/{delivery}/assign', [DeliveryController::class, 'assignDeliveryPerson'])->name('deliveries.assign');
+        Route::get('deliveries/{delivery}/tracking', [DeliveryController::class, 'getTrackingInfo'])->name('deliveries.tracking');
     });
 
     /*
@@ -237,17 +214,41 @@ Route::middleware('permission:manage payments')->group(function () {
     */
     Route::middleware('permission:view reports')->group(function () {
         Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
-        Route::get('reports/sales', [ReportController::class, 'sales'])->name('reports.sales');
-        Route::get('reports/production', [ReportController::class, 'production'])->name('reports.production');
-        Route::get('reports/delivery', [ReportController::class, 'delivery'])->name('reports.delivery');
-        Route::get('reports/financial', [ReportController::class, 'financial'])->name('reports.financial');
-        Route::post('reports/export', [ReportController::class, 'export'])->name('reports.export');
+        Route::get('reports/sales', [ReportController::class, 'salesReport'])->name('reports.sales');
+        Route::get('reports/payments', [ReportController::class, 'paymentsReport'])->name('reports.payments');
+        Route::get('reports/production', [ReportController::class, 'productionReport'])->name('reports.production');
+        Route::get('reports/delivery', [ReportController::class, 'deliveryReport'])->name('reports.delivery');
+        Route::get('reports/financial', [ReportController::class, 'financialReport'])->name('reports.financial');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | API Routes for AJAX calls
+    |--------------------------------------------------------------------------
+    */
+    Route::prefix('api')->group(function () {
+        Route::get('customers/search', [CustomerController::class, 'search'])->name('api.customers.search');
+        Route::get('products/search', [ProductController::class, 'search'])->name('api.products.search');
+        Route::get('invoices/{id}/payment-data', [InvoiceController::class, 'getPaymentData'])->name('api.invoices.payment-data');
     });
 });
 
 /*
 |--------------------------------------------------------------------------
-| Settings Routes
+| Public API Routes (if needed)
 |--------------------------------------------------------------------------
 */
-require __DIR__.'/settings.php';
+Route::prefix('webhook')->group(function () {
+    // Payment gateway webhooks
+    Route::post('payhere', [PaymentController::class, 'payhereWebhook'])->name('webhook.payhere');
+    Route::post('stripe', [PaymentController::class, 'stripeWebhook'])->name('webhook.stripe');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Fallback Route
+|--------------------------------------------------------------------------
+*/
+Route::fallback(function () {
+    return Inertia::render('errors/404');
+});

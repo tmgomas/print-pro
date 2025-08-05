@@ -13,6 +13,7 @@ use App\Repositories\BranchRepository;
 use App\Services\InvoiceService;
 use App\Services\PaymentService;
 use Illuminate\Http\Request;
+use App\Models\Invoice;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
@@ -493,57 +494,132 @@ class InvoiceController extends Controller
     /**
      * Record quick payment for invoice
      */
-   public function recordPayment(StorePaymentRequest $request, int $id): JsonResponse
+  public function recordPayment(Request $request, $id)
 {
     try {
-        $user = auth()->user();
-        
-        $invoice = $this->invoiceRepository->find($id);
-        
-        if (!$invoice || $invoice->company_id !== $user->company_id) {
-            return response()->json(['error' => 'Invoice not found'], 404);
+        // Validate the request
+        $validated = $request->validate([
+            'amount' => [
+                'required',
+                'numeric',
+                'min:0.01',
+                'max:999999.99',
+                function ($attribute, $value, $fail) use ($id) {
+                    $invoice = Invoice::findOrFail($id);
+                    $paymentSummary = app(PaymentService::class)->getInvoicePaymentSummary($invoice->id);
+                    $remainingAmount = $paymentSummary['remaining_balance'];
+                    
+                    if ($value > $remainingAmount) {
+                        $fail('Payment amount cannot exceed remaining balance of Rs.' . number_format($remainingAmount, 2));
+                    }
+                }
+            ],
+            'payment_method' => [
+                'required',
+                'string',
+                'in:cash,bank_transfer,online,card,cheque,mobile_payment',
+            ],
+            'payment_date' => [
+                'required',
+                'date',
+                'before_or_equal:today',
+                'after:' . now()->subYear()->format('Y-m-d'),
+            ],
+            'bank_name' => [
+                'nullable',
+                'string',
+                'max:100',
+                'required_if:payment_method,bank_transfer,cheque',
+            ],
+            'transaction_id' => [
+                'nullable',
+                'string',
+                'max:100',
+                'unique:payments,transaction_id',
+            ],
+            'gateway_reference' => [
+                'nullable',
+                'string',
+                'max:200',
+                'required_if:payment_method,online',
+            ],
+            'cheque_number' => [
+                'nullable',
+                'string',
+                'max:50',
+                'required_if:payment_method,cheque',
+            ],
+            'notes' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+        ]);
+
+        // Find the invoice
+        $invoice = Invoice::findOrFail($id);
+
+        // Check if user can record payment for this invoice (same branch)
+        if ($invoice->branch_id !== auth()->user()->branch_id) {
+            return back()->withErrors(['error' => 'You can only record payments for invoices from your branch.']);
         }
 
-        // Check remaining balance
-        $paymentSummary = $this->paymentService->getInvoicePaymentSummary($id);
-        if ($request->amount > $paymentSummary['remaining_balance']) {
+        // Add invoice_id to the validated data
+        $validated['invoice_id'] = $invoice->id;
+        $validated['customer_id'] = $invoice->customer_id;
+        $validated['branch_id'] = $invoice->branch_id;
+        // Create the payment using PaymentService
+        $payment = app(PaymentService::class)->createPayment($validated);
+
+        // Get updated payment summary
+        $paymentSummary = app(PaymentService::class)->getInvoicePaymentSummary($invoice->id);
+
+        // Return with success message
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment recorded successfully. Reference: ' . $payment->payment_reference,
+                'payment' => $payment,
+                'paymentSummary' => $paymentSummary
+            ]);
+        }
+
+        return redirect()->route('invoices.show', $invoice)
+            ->with('success', 'Payment recorded successfully. Reference: ' . $payment->payment_reference)
+            ->with('paymentSummary', $paymentSummary);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        \Log::error('Payment validation failed:', [
+            'errors' => $e->errors(),
+            'input' => $request->all()
+        ]);
+
+        if ($request->expectsJson()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Payment amount exceeds remaining balance'
-            ], 400);
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         }
 
-        // Merge the validated data with additional fields
-        $paymentData = array_merge($request->validated(), [
-            'invoice_id' => $id,
-            'customer_id' => $invoice->customer_id,
-            'branch_id' => $user->branch_id,
-            'received_by' => $user->id,
-            'status' => 'completed', // Quick payments are auto-completed
-            'verification_status' => 'verified',
-        ]);
-
-        $payment = $this->paymentService->createPayment($paymentData);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Payment recorded successfully',
-            'payment' => $payment->load(['invoice', 'customer']),
-            'paymentSummary' => $this->paymentService->getInvoicePaymentSummary($id)
-        ]);
+        return back()->withErrors($e->errors())->withInput();
 
     } catch (\Exception $e) {
-        \Log::error('Quick payment creation failed', [
-            'invoice_id' => $id,
-            'user_id' => auth()->id(),
+        \Log::error('Payment creation failed:', [
             'error' => $e->getMessage(),
-            'request_data' => $request->all(),
+            'trace' => $e->getTraceAsString(),
+            'input' => $request->all()
         ]);
 
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to record payment: ' . $e->getMessage()
-        ], 500);
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to record payment: ' . $e->getMessage()
+            ], 500);
+        }
+
+        return back()->withErrors(['error' => 'Failed to record payment: ' . $e->getMessage()])
+            ->withInput();
     }
 }
 
