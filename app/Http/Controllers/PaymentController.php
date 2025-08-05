@@ -232,92 +232,67 @@ class PaymentController extends Controller
     /**
      * Verify payment
      */
-    public function verify(Request $request, Payment $payment): JsonResponse
-    {
-        $request->validate([
-            'notes' => 'nullable|string|max:1000',
+  public function verify(Request $request, Payment $payment): RedirectResponse
+{
+    $request->validate([
+        'notes' => 'nullable|string|max:1000',
+    ]);
+
+    try {
+        // Load relationships
+        $payment->load('invoice');
+        
+        // Check permissions
+        if ($payment->branch_id !== auth()->user()->branch_id) {
+            return back()->withErrors(['error' => 'You can only verify payments from your branch.']);
+        }
+
+        // Update payment status
+        $payment->update([
+            'verification_status' => 'verified',
+            'status' => 'completed',
+            'verified_at' => now(),
+            'verified_by' => auth()->id(),
+            'notes' => $request->notes,
         ]);
 
-        try {
-            // Check permissions
-            if ($payment->branch_id !== auth()->user()->branch_id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You can only verify payments from your branch.',
-                ], 403);
-            }
+        return back()->with('success', 'Payment verified successfully');
 
-            $result = $this->paymentService->verifyPayment(
-                $payment->id,
-                auth()->id(),
-                $request->notes
-            );
-
-            if ($result) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Payment verified successfully',
-                    'payment' => $payment->fresh(['invoice', 'customer']),
-                ]);
-            }
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to verify payment',
-            ], 400);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error verifying payment: ' . $e->getMessage(),
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => 'Error verifying payment: ' . $e->getMessage()]);
     }
+}
 
-    /**
-     * Reject payment
-     */
-    public function reject(Request $request, Payment $payment): JsonResponse
-    {
-        $request->validate([
-            'reason' => 'required|string|max:1000',
+public function reject(Request $request, Payment $payment): RedirectResponse
+{
+    $request->validate([
+        'reason' => 'required|string|max:1000',
+    ]);
+
+    try {
+        // Load relationships
+        $payment->load('invoice');
+        
+        // Check permissions
+        if ($payment->branch_id !== auth()->user()->branch_id) {
+            return back()->withErrors(['error' => 'You can only reject payments from your branch.']);
+        }
+
+        // Update payment status
+        $payment->update([
+            'verification_status' => 'rejected',
+            'status' => 'failed',
+            'rejection_reason' => $request->reason,
+            'verified_at' => now(),
+            'verified_by' => auth()->id(),
         ]);
 
-        try {
-            // Check permissions
-            if ($payment->branch_id !== auth()->user()->branch_id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You can only reject payments from your branch.',
-                ], 403);
-            }
+        return back()->with('success', 'Payment rejected successfully');
 
-            $result = $this->paymentService->rejectPayment(
-                $payment->id,
-                auth()->id(),
-                $request->reason
-            );
-
-            if ($result) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Payment rejected successfully',
-                    'payment' => $payment->fresh(['invoice', 'customer']),
-                ]);
-            }
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to reject payment',
-            ], 400);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error rejecting payment: ' . $e->getMessage(),
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => 'Error rejecting payment: ' . $e->getMessage()]);
     }
+}
 
     /**
      * Delete payment (soft delete)

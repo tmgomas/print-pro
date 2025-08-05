@@ -166,8 +166,11 @@ Route::middleware('auth')->group(function () {
     */
     Route::middleware('permission:manage payments')->group(function () {
         Route::resource('payments', PaymentController::class);
-
-        Route::post('payments/{id}/reject', [PaymentController::class, 'reject'])->name('payments.reject');
+Route::post('payments/{payment}/verify', [PaymentController::class, 'verify'])
+    ->name('payments.verify');
+Route::post('payments/{payment}/reject', [PaymentController::class, 'reject'])
+    ->name('payments.reject');
+       
         Route::get('payments/{id}/receipt', [PaymentController::class, 'generateReceipt'])->name('payments.receipt');
     });
 
@@ -178,10 +181,10 @@ Route::middleware('auth')->group(function () {
     */
     Route::middleware('permission:manage payments')->group(function () {
         Route::resource('payment-verifications', PaymentVerificationController::class);
-        Route::post('payment-verifications/{paymentVerification}/verify', [PaymentVerificationController::class, 'payments.verify'])
-            ->name('payment-verifications.verify');
-        Route::post('payment-verifications/{paymentVerification}/reject', [PaymentVerificationController::class, 'reject'])
-            ->name('payment-verifications.reject');
+       Route::post('payment-verifications/{id}/verify', [PaymentVerificationController::class, 'verify'])
+    ->name('payment-verifications.verify');
+Route::post('payment-verifications/{id}/reject', [PaymentVerificationController::class, 'reject'])
+    ->name('payment-verifications.reject');
     });
 
     /*

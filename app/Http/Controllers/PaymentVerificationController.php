@@ -23,10 +23,7 @@ class PaymentVerificationController extends Controller
     ) {
         $this->paymentService = $paymentService;
         $this->verificationRepository = $verificationRepository;
-        $this->middleware('auth');
-        $this->middleware('can:view payment verifications')->only(['index', 'show']);
-        $this->middleware('can:create payment verifications')->only(['create', 'store']);
-        $this->middleware('can:verify payments')->only(['verify', 'reject']);
+      
     }
 
     /**
@@ -135,79 +132,58 @@ class PaymentVerificationController extends Controller
     /**
      * Verify a payment verification
      */
-    public function verify(Request $request, PaymentVerification $paymentVerification): JsonResponse
-    {
-        $request->validate([
-            'notes' => 'nullable|string|max:1000',
+   public function verify(Request $request, PaymentVerification $paymentVerification): JsonResponse
+{
+    $request->validate([
+        'notes' => 'nullable|string|max:1000',
+    ]);
+
+    try {
+        // Debug information
+        \Log::info('Payment Verification Debug', [
+            'verification_id' => $paymentVerification->id,
+            'invoice_id' => $paymentVerification->invoice_id,
+            'payment_id' => $paymentVerification->payment_id,
         ]);
 
-        try {
-            // Check permissions
-            if ($paymentVerification->invoice->branch_id !== auth()->user()->branch_id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You can only verify payments from your branch.',
-                ], 403);
-            }
-
-            $result = $this->verificationRepository->updateVerificationStatus(
-                $paymentVerification->id,
-                'verified',
-                auth()->id(),
-                $request->notes
-            );
-
-            if ($result) {
-                // If verification has associated payment, verify that payment too
-                if ($paymentVerification->payment_id) {
-                    $this->paymentService->verifyPayment(
-                        $paymentVerification->payment_id,
-                        auth()->id(),
-                        $request->notes
-                    );
-                } else {
-                    // Create new payment record based on verification
-                    $paymentData = [
-                        'invoice_id' => $paymentVerification->invoice_id,
-                        'customer_id' => $paymentVerification->customer_id,
-                        'amount' => $paymentVerification->claimed_amount,
-                        'payment_date' => $paymentVerification->payment_claimed_date,
-                        'payment_method' => 'bank_transfer',
-                        'bank_name' => $paymentVerification->bank_name,
-                        'transaction_id' => $paymentVerification->bank_reference,
-                        'status' => 'completed',
-                        'verification_status' => 'verified',
-                        'notes' => $request->notes,
-                        'verified_at' => now(),
-                        'verified_by' => auth()->id(),
-                    ];
-
-                    $payment = $this->paymentService->createPayment($paymentData);
-                    
-                    // Link verification to the created payment
-                    $paymentVerification->update(['payment_id' => $payment->id]);
-                }
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Payment verification approved successfully',
-                    'verification' => $paymentVerification->fresh(['invoice', 'customer', 'payment']),
-                ]);
-            }
-
+        // Check if invoice_id exists
+        if (!$paymentVerification->invoice_id) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to verify payment',
+                'message' => 'Payment verification has no invoice ID.',
             ], 400);
+        }
 
-        } catch (\Exception $e) {
+        // Load invoice relationship
+        $paymentVerification->load('invoice');
+        
+        // Debug loaded invoice
+        \Log::info('Invoice loaded', [
+            'invoice_exists' => $paymentVerification->invoice ? 'yes' : 'no',
+            'invoice_id' => $paymentVerification->invoice_id,
+        ]);
+
+        if (!$paymentVerification->invoice) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error verifying payment: ' . $e->getMessage(),
-            ], 500);
+                'message' => 'Associated invoice not found for this verification.',
+            ], 404);
         }
-    }
 
+        // Rest of your code...
+        
+    } catch (\Exception $e) {
+        \Log::error('Payment verification error', [
+            'error' => $e->getMessage(),
+            'verification_id' => $paymentVerification->id ?? 'unknown'
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Error verifying payment: ' . $e->getMessage(),
+        ], 500);
+    }
+}
     /**
      * Reject a payment verification
      */

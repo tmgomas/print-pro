@@ -45,11 +45,12 @@ class PaymentVerification extends Model
         return $this->belongsTo(Payment::class);
     }
 
-    public function invoice(): BelongsTo
+  
+    public function invoice()
     {
-        return $this->belongsTo(Invoice::class);
+        return $this->belongsTo(Invoice::class, 'invoice_id');
     }
-
+    
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
