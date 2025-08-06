@@ -101,10 +101,15 @@ public function createStandaloneJob(array $data): PrintJob
 /**
  * Create print job from invoice with override data
  */
-private function createFromInvoice(\App\Models\Invoice $invoice, array $overrideData = []): PrintJob
+public function createFromInvoice(\App\Models\Invoice $invoice, array $overrideData = []): PrintJob
 {
     try {
         return DB::transaction(function () use ($invoice, $overrideData) {
+            // Ensure the invoice has items loaded
+            if (!$invoice->relationLoaded('items')) {
+                $invoice->load('items.product');
+            }
+
             $jobNumber = $this->generateJobNumber($invoice->branch_id);
             
             $printJobData = [
@@ -140,6 +145,126 @@ private function createFromInvoice(\App\Models\Invoice $invoice, array $override
         throw $e;
     }
 }
+
+/**
+ * Determine job type from invoice items
+ */
+private function determineJobType(Invoice $invoice): string
+{
+    // Ensure items are loaded
+    if (!$invoice->relationLoaded('items')) {
+        $invoice->load('items.product');
+    }
+
+    // Check if items exist
+    if (!$invoice->items || $invoice->items->isEmpty()) {
+        return 'general_printing';
+    }
+
+    $products = $invoice->items->pluck('product.name')->filter()->toArray();
+    
+    if (empty($products)) {
+        return 'general_printing';
+    }
+    
+    if (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'business card'))) {
+        return 'business_cards';
+    } elseif (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'brochure'))) {
+        return 'brochures';
+    } elseif (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'banner'))) {
+        return 'banners';
+    }
+    
+    return 'general_printing';
+}
+
+/**
+ * Extract specifications from invoice
+ */
+private function extractSpecifications(Invoice $invoice): array
+{
+    $specifications = [];
+    
+    // Ensure items are loaded
+    if (!$invoice->relationLoaded('items')) {
+        $invoice->load('items.product');
+    }
+
+    // Check if items exist
+    if (!$invoice->items || $invoice->items->isEmpty()) {
+        return [
+            'note' => 'No items found in invoice',
+            'invoice_id' => $invoice->id,
+            'invoice_number' => $invoice->invoice_number,
+        ];
+    }
+    
+    foreach ($invoice->items as $item) {
+        $specifications[] = [
+            'product' => $item->product ? $item->product->name : $item->item_description,
+            'quantity' => $item->quantity,
+            'specifications' => $item->specifications ?? [],
+            'weight' => $item->line_weight
+        ];
+    }
+    
+    return $specifications;
+}
+
+/**
+ * Calculate priority based on various factors
+ */
+private function calculatePriority(Invoice $invoice): string
+{
+    $totalAmount = $invoice->total_amount;
+    $dueDate = $invoice->due_date;
+    
+    // Load customer if not loaded
+    if (!$invoice->relationLoaded('customer')) {
+        $invoice->load('customer');
+    }
+    
+    $customerType = optional($invoice->customer)->customer_type ?? 'regular';
+
+    // VIP customers get high priority
+    if ($customerType === 'vip') {
+        return 'urgent';
+    }
+
+    // Large orders get high priority
+    if ($totalAmount > 50000) {
+        return 'high';
+    }
+
+    // Due soon gets medium priority
+    if ($dueDate && $dueDate->diffInDays(now()) <= 2) {
+        return 'medium';
+    }
+
+    return 'normal';
+}
+
+/**
+ * Estimate completion time for invoice
+ */
+private function estimateCompletion(Invoice $invoice): \Carbon\Carbon
+{
+    $baseHours = 24; // Default 24 hours
+    
+    // Add time based on complexity
+    $totalWeight = $invoice->total_weight ?? 0;
+    if ($totalWeight > 10) {
+        $baseHours += 12;
+    }
+    
+    $totalAmount = $invoice->total_amount ?? 0;
+    if ($totalAmount > 25000) {
+        $baseHours += 8;
+    }
+
+    return now()->addHours($baseHours);
+}
+
 
 /**
  * Format manual specifications
@@ -432,96 +557,14 @@ public function duplicateJob(PrintJob $originalJob, array $overrideData = []): P
         return $prefix . '-' . $date . '-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * Determine job type from invoice items
-     */
-    private function determineJobType(Invoice $invoice): string
-    {
-        $products = $invoice->invoiceItems->pluck('product.name')->toArray();
-        
-        if (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'business card'))) {
-            return 'business_cards';
-        } elseif (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'brochure'))) {
-            return 'brochures';
-        } elseif (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'banner'))) {
-            return 'banners';
-        }
-        
-        return 'general_printing';
-    }
 
-    /**
-     * Extract specifications from invoice
-     */
-    private function extractSpecifications(Invoice $invoice): array
-    {
-        $specifications = [];
-        
-        foreach ($invoice->invoiceItems as $item) {
-            $specifications[] = [
-                'product' => $item->product->name,
-                'quantity' => $item->quantity,
-                'specifications' => $item->specifications ?? [],
-                'weight' => $item->line_weight
-            ];
-        }
-        
-        return $specifications;
-    }
 
-    /**
-     * Calculate priority based on various factors
-     */
-    private function calculatePriority(Invoice $invoice): string
-    {
-        $totalAmount = $invoice->total_amount;
-        $dueDate = $invoice->due_date;
-        $customerType = $invoice->customer->customer_type ?? 'regular';
-
-        // VIP customers get high priority
-        if ($customerType === 'vip') {
-            return 'urgent';
-        }
-
-        // Large orders get high priority
-        if ($totalAmount > 50000) {
-            return 'high';
-        }
-
-        // Due soon gets medium priority
-        if ($dueDate && $dueDate->diffInDays(now()) <= 2) {
-            return 'medium';
-        }
-
-        return 'normal';
-    }
-
-    /**
-     * Estimate completion time
-     */
-    private function estimateCompletion(Invoice $invoice): \Carbon\Carbon
-    {
-        $baseHours = 24; // Default 24 hours
-        
-        // Add time based on complexity
-        $totalWeight = $invoice->total_weight;
-        if ($totalWeight > 10) {
-            $baseHours += 12;
-        }
-        
-        $totalAmount = $invoice->total_amount;
-        if ($totalAmount > 25000) {
-            $baseHours += 8;
-        }
-
-        return now()->addHours($baseHours);
-    }
-
-    /**
-     * Create default production stages for print job
-     */
-    private function createProductionStages(PrintJob $printJob): void
-    {
+/**
+ * Create default production stages for print job
+ */
+private function createProductionStages(PrintJob $printJob): void
+{
+    try {
         $defaultStages = $this->getDefaultStagesForJobType($printJob->job_type);
         
         foreach ($defaultStages as $index => $stage) {
@@ -535,42 +578,107 @@ public function duplicateJob(PrintJob $originalJob, array $overrideData = []): P
                 'updated_by' => Auth::id()
             ]);
         }
+    } catch (\Exception $e) {
+        // Log the error but don't fail the print job creation
+        \Log::warning('Failed to create production stages for print job', [
+            'print_job_id' => $printJob->id,
+            'error' => $e->getMessage()
+        ]);
     }
+}
 
-    /**
-     * Get default stages for different job types
-     */
-    private function getDefaultStagesForJobType(string $jobType): array
-    {
-        $stageTemplates = [
-            'business_cards' => [
-                ['name' => 'design_review', 'estimated_duration' => 30, 'requires_approval' => false],
-                ['name' => 'customer_approval', 'estimated_duration' => 60, 'requires_approval' => true],
-                ['name' => 'pre_press_setup', 'estimated_duration' => 45, 'requires_approval' => false],
-                ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
-                ['name' => 'cutting', 'estimated_duration' => 60, 'requires_approval' => false],
-                ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
-                ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
-            ],
-            'brochures' => [
-                ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
-                ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
-                ['name' => 'pre_press_setup', 'estimated_duration' => 90, 'requires_approval' => false],
-                ['name' => 'printing_process', 'estimated_duration' => 180, 'requires_approval' => false],
-                ['name' => 'folding', 'estimated_duration' => 90, 'requires_approval' => false],
-                ['name' => 'quality_inspection', 'estimated_duration' => 45, 'requires_approval' => false],
-                ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
-            ],
-            'general_printing' => [
-                ['name' => 'design_review', 'estimated_duration' => 45, 'requires_approval' => false],
-                ['name' => 'customer_approval', 'estimated_duration' => 90, 'requires_approval' => true],
-                ['name' => 'pre_press_setup', 'estimated_duration' => 60, 'requires_approval' => false],
-                ['name' => 'printing_process', 'estimated_duration' => 150, 'requires_approval' => false],
-                ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
-                ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
-            ]
-        ];
+/**
+ * Get default stages for different job types
+ */
+private function getDefaultStagesForJobType(string $jobType): array
+{
+    $stageTemplates = [
+        'business_cards' => [
+            ['name' => 'design_review', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 60, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'cutting', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ],
+        'brochures' => [
+            ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 180, 'requires_approval' => false],
+            ['name' => 'folding', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ],
+        'flyers' => [
+            ['name' => 'design_review', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 90, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'cutting', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 20, 'requires_approval' => false],
+        ],
+        'posters' => [
+            ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 75, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 180, 'requires_approval' => false],
+            ['name' => 'cutting', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ],
+        'banners' => [
+            ['name' => 'design_review', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 180, 'requires_approval' => true],
+            ['name' => 'material_preparation', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 300, 'requires_approval' => false],
+            ['name' => 'finishing', 'estimated_duration' => 180, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 45, 'requires_approval' => false],
+        ],
+        'booklets' => [
+            ['name' => 'design_review', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 240, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 180, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 480, 'requires_approval' => false],
+            ['name' => 'binding', 'estimated_duration' => 240, 'requires_approval' => false],
+            ['name' => 'cutting', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 60, 'requires_approval' => false],
+        ],
+        'stickers' => [
+            ['name' => 'design_review', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 60, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'die_cutting', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ],
+        'general_printing' => [
+            ['name' => 'design_review', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 90, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 150, 'requires_approval' => false],
+            ['name' => 'finishing', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ],
+        'custom' => [
+            ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
+            ['name' => 'preparation', 'estimated_duration' => 180, 'requires_approval' => false],
+            ['name' => 'production', 'estimated_duration' => 480, 'requires_approval' => false],
+            ['name' => 'finishing', 'estimated_duration' => 240, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 45, 'requires_approval' => false],
+        ]
+    ];
 
-        return $stageTemplates[$jobType] ?? $stageTemplates['general_printing'];
-    }
+    return $stageTemplates[$jobType] ?? $stageTemplates['general_printing'];
+}
+
+  
 }

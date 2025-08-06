@@ -186,7 +186,40 @@ Route::post('payments/{payment}/reject', [PaymentController::class, 'reject'])
 Route::post('payment-verifications/{id}/reject', [PaymentVerificationController::class, 'reject'])
     ->name('payment-verifications.reject');
     });
+Route::middleware('permission:manage production')->group(function () {
+    // Print Job Routes
+    Route::prefix('production/print-jobs')->name('production.print-jobs.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\PrintJobController::class, 'index'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\PrintJobController::class, 'create'])->name('create');
+        Route::post('/store-manual', [\App\Http\Controllers\PrintJobController::class, 'storeManual'])->name('store-manual');
+        Route::get('/create-standalone', [\App\Http\Controllers\PrintJobController::class, 'createStandalone'])->name('create-standalone');
+        Route::post('/store-standalone', [\App\Http\Controllers\PrintJobController::class, 'storeStandalone'])->name('store-standalone');
+        Route::get('/{printJob}', [\App\Http\Controllers\PrintJobController::class, 'show'])->name('show');
+        Route::get('/{printJob}/edit', [\App\Http\Controllers\PrintJobController::class, 'edit'])->name('edit');
+        Route::put('/{printJob}', [\App\Http\Controllers\PrintJobController::class, 'update'])->name('update');
+        Route::delete('/{printJob}', [\App\Http\Controllers\PrintJobController::class, 'destroy'])->name('destroy');
+        Route::post('/{printJob}/start-production', [\App\Http\Controllers\PrintJobController::class, 'startProduction'])->name('start-production');
+        Route::post('/{printJob}/assign', [\App\Http\Controllers\PrintJobController::class, 'assignStaff'])->name('assign');
+        Route::patch('/{printJob}/priority', [\App\Http\Controllers\PrintJobController::class, 'updatePriority'])->name('update-priority');
+    });
 
+    // Production Stage Routes
+    Route::prefix('production/stages')->name('production.stages.')->group(function () {
+        Route::get('/approvals', [\App\Http\Controllers\ProductionStageController::class, 'approvals'])->name('approvals');
+        Route::put('/{stage}', [\App\Http\Controllers\ProductionStageController::class, 'update'])->name('update');
+        Route::post('/{stage}/start', [\App\Http\Controllers\ProductionStageController::class, 'start'])->name('start');
+        Route::post('/{stage}/complete', [\App\Http\Controllers\ProductionStageController::class, 'complete'])->name('complete');
+        Route::post('/{stage}/hold', [\App\Http\Controllers\ProductionStageController::class, 'hold'])->name('hold');
+        Route::post('/{stage}/resume', [\App\Http\Controllers\ProductionStageController::class, 'resume'])->name('resume');
+        Route::post('/{stage}/approve', [\App\Http\Controllers\ProductionStageController::class, 'approve'])->name('approve');
+        Route::post('/{stage}/reject', [\App\Http\Controllers\ProductionStageController::class, 'reject'])->name('reject');
+        Route::post('/{stage}/skip', [\App\Http\Controllers\ProductionStageController::class, 'skip'])->name('skip');
+        Route::get('/{printJob}/history', [\App\Http\Controllers\ProductionStageController::class, 'history'])->name('history');
+        Route::post('/bulk-action', [\App\Http\Controllers\ProductionStageController::class, 'bulkAction'])->name('bulk-action');
+        Route::get('/analytics', [\App\Http\Controllers\ProductionStageController::class, 'analytics'])->name('analytics');
+        Route::get('/kanban', [\App\Http\Controllers\ProductionStageController::class, 'kanban'])->name('kanban');
+    });
+});
     /*
     |--------------------------------------------------------------------------
     | Production Management Routes

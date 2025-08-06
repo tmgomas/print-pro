@@ -197,62 +197,94 @@ class InvoiceController extends Controller
     /**
      * Display the specified invoice with payment information
      */
-    public function show(int $id): Response
-    {
-        $invoice = $this->invoiceRepository->findWithDetails($id);
-        
-        if (!$invoice) {
-            abort(404, 'Invoice not found.');
-        }
-
-        $this->authorize('view invoices');
-
-        $user = auth()->user();
-        if ($invoice->company_id !== $user->company_id) {
-            abort(403, 'You cannot view this invoice.');
-        }
-
-        // Check branch access
-        if (!$user->can('view all branches') && $user->branch_id !== $invoice->branch_id) {
-            abort(403, 'You cannot view invoices from other branches.');
-        }
-
-        // Get payment summary for this invoice
-        $paymentSummary = $this->paymentService->getInvoicePaymentSummary($invoice->id);
-
-        // Get recent payment activity
-        $recentPayments = $this->paymentService->getRecentPayments($invoice->branch_id, 5);
-
-        return Inertia::render('Invoices/Show', [
-            'invoice' => $invoice->load([
-                'customer',
-                'branch',
-                'creator',
-                'items.product',
-                'deliveries',
-                'printJobs'
-            ]),
-            'paymentSummary' => $paymentSummary,
-            'recentPayments' => $recentPayments,
-            'permissions' => [
-                'edit' => $user->can('edit invoices') && $this->invoiceRepository->canBeModified($id),
-                'delete' => $user->can('delete invoices') && $this->invoiceRepository->canBeDeleted($id),
-                'create_payment' => $user->can('create payments'),
-                'verify_payment' => $user->can('verify payments'),
-                'manage_payments' => $user->can('manage payments'),
-                'generate_pdf' => $user->can('view invoices'),
-            ],
-            'paymentMethods' => [
-                'cash' => 'Cash',
-                'bank_transfer' => 'Bank Transfer',
-                'online' => 'Online Payment',
-                'card' => 'Card Payment',
-                'cheque' => 'Cheque',
-                'mobile_payment' => 'Mobile Payment',
-            ]
-        ]);
+   public function show(int $id): Response
+{
+    $invoice = $this->invoiceRepository->findWithDetails($id);
+    
+    if (!$invoice) {
+        abort(404, 'Invoice not found.');
     }
 
+    $this->authorize('view invoices');
+
+    $user = auth()->user();
+    if ($invoice->company_id !== $user->company_id) {
+        abort(403, 'You cannot view this invoice.');
+    }
+
+    // Check branch access
+    if (!$user->can('view all branches') && $user->branch_id !== $invoice->branch_id) {
+        abort(403, 'You cannot view invoices from other branches.');
+    }
+
+    // Get payment summary for this invoice
+    $paymentSummary = $this->paymentService->getInvoicePaymentSummary($invoice->id);
+
+    // Get recent payment activity
+    $recentPayments = $this->paymentService->getRecentPayments($invoice->branch_id, 5);
+
+    // Check if print job exists for this invoice
+    $printJob = $invoice->printJobs()->first();
+
+    // Get data needed for print job creation
+    $jobTypes = [
+        'business_cards' => 'Business Cards',
+        'brochures' => 'Brochures',
+        'flyers' => 'Flyers',
+        'posters' => 'Posters',
+        'banners' => 'Banners',
+        'booklets' => 'Booklets',
+        'stickers' => 'Stickers',
+        'general_printing' => 'General Printing',
+        'custom' => 'Custom Job',
+    ];
+
+    // Get production staff for assignment
+    $productionStaff = \App\Models\User::where('branch_id', $user->branch_id)
+        ->whereHas('roles', function ($query) {
+            $query->where('name', 'Production Staff');
+        })
+        ->where('status', 'active')
+        ->select('id', 'name', 'email')
+        ->orderBy('name')
+        ->get();
+
+    return Inertia::render('Invoices/Show', [
+        'invoice' => $invoice->load([
+            'customer',
+            'branch',
+            'creator',
+            'items.product',
+            'deliveries',
+            'printJobs'
+        ]),
+        'paymentSummary' => $paymentSummary,
+        'recentPayments' => $recentPayments,
+        'printJob' => $printJob,
+        'permissions' => [
+            'edit' => $user->can('edit invoices') && $this->invoiceRepository->canBeModified($id),
+            'delete' => $user->can('delete invoices') && $this->invoiceRepository->canBeDeleted($id),
+            'create_payment' => $user->can('create payments'),
+            'verify_payment' => $user->can('verify payments'),
+            'manage_payments' => $user->can('manage payments'),
+            'generate_pdf' => $user->can('view invoices'),
+            // Add missing print job permissions
+            'create_print_job' => $user->can('create print jobs'),
+            'manage_production' => $user->can('manage production'),
+        ],
+        'paymentMethods' => [
+            'cash' => 'Cash',
+            'bank_transfer' => 'Bank Transfer',
+            'online' => 'Online Payment',
+            'card' => 'Card Payment',
+            'cheque' => 'Cheque',
+            'mobile_payment' => 'Mobile Payment',
+        ],
+        // Add data needed for print job creation
+        'jobTypes' => $jobTypes,
+        'productionStaff' => $productionStaff,
+    ]);
+}
     /**
      * Show the form for editing the specified invoice
      */

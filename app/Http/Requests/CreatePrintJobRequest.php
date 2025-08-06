@@ -15,7 +15,7 @@ class CreatePrintJobRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'invoice_id' => 'required|exists:invoices,id',
+            'invoice_id' => 'nullable|exists:invoices,id', // Make it nullable for standalone jobs
             'job_type' => 'required|string|max:100',
             'priority' => 'required|in:low,normal,medium,high,urgent',
             'assigned_to' => 'nullable|exists:users,id',
@@ -24,88 +24,33 @@ class CreatePrintJobRequest extends FormRequest
             'design_files.*' => 'file|mimes:pdf,jpg,jpeg,png,ai,psd|max:10240',
             'customer_instructions' => 'nullable|string|max:1000',
             'estimated_completion' => 'nullable|date|after:now',
+            
+            // Additional fields for standalone jobs
+            'customer_id' => 'nullable|exists:customers,id',
+            'job_title' => 'nullable|string|max:200',
+            'description' => 'nullable|string|max:1000',
+            'estimated_cost' => 'nullable|numeric|min:0',
+            'branch_id' => 'nullable|exists:branches,id',
         ];
     }
 
     public function messages(): array
     {
         return [
-            'invoice_id.required' => 'Invoice is required',
             'invoice_id.exists' => 'Selected invoice does not exist',
             'job_type.required' => 'Job type is required',
             'priority.required' => 'Priority is required',
             'priority.in' => 'Priority must be one of: low, normal, medium, high, urgent',
             'assigned_to.exists' => 'Selected staff member does not exist',
             'design_files.*.mimes' => 'Design files must be: pdf, jpg, jpeg, png, ai, psd',
-            'design_files.*.max' => 'Each design file must be less than 10MB',
+            'design_files.*.max' => 'Design files must not exceed 10MB',
+            'customer_instructions.max' => 'Customer instructions must not exceed 1000 characters',
             'estimated_completion.after' => 'Estimated completion must be in the future',
+            'customer_id.exists' => 'Selected customer does not exist',
+            'estimated_cost.min' => 'Estimated cost must be positive',
+            'branch_id.exists' => 'Selected branch does not exist',
         ];
     }
 
-    /**
-     * Prepare data for validation
-     */
-    protected function prepareForValidation(): void
-    {
-        // Set default priority if not provided
-        if (!$this->has('priority')) {
-            $this->merge(['priority' => 'normal']);
-        }
-
-        // Set default job type based on invoice if not provided
-        if (!$this->has('job_type') && $this->has('invoice_id')) {
-            $invoice = \App\Models\Invoice::find($this->invoice_id);
-            if ($invoice) {
-                $this->merge(['job_type' => $this->determineJobType($invoice)]);
-            }
-        }
-    }
-
-    /**
-     * Get validated data with additional processing
-     */
-    public function getValidatedData(): array
-    {
-        $validated = $this->validated();
-        
-        // Handle file uploads
-        if ($this->hasFile('design_files')) {
-            $designFiles = [];
-            foreach ($this->file('design_files') as $file) {
-                $path = $file->store('print-jobs/design-files', 'public');
-                $designFiles[] = [
-                    'path' => $path,
-                    'original_name' => $file->getClientOriginalName(),
-                    'size' => $file->getSize(),
-                    'mime_type' => $file->getClientMimeType(),
-                    'uploaded_at' => now()->toISOString()
-                ];
-            }
-            $validated['design_files'] = $designFiles;
-        }
-
-        return $validated;
-    }
-
-    /**
-     * Determine job type from invoice
-     */
-    private function determineJobType(\App\Models\Invoice $invoice): string
-    {
-        $products = $invoice->invoiceItems->pluck('product.name')->toArray();
-        
-        if (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'business card'))) {
-            return 'business_cards';
-        } elseif (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'brochure'))) {
-            return 'brochures';
-        } elseif (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'banner'))) {
-            return 'banners';
-        } elseif (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'flyer'))) {
-            return 'flyers';
-        } elseif (collect($products)->contains(fn($name) => str_contains(strtolower($name), 'poster'))) {
-            return 'posters';
-        }
-        
-        return 'general_printing';
-    }
+    // Remove getValidatedData() method - use validated() instead
 }

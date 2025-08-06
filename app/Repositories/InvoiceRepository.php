@@ -210,24 +210,6 @@ class InvoiceRepository extends BaseRepository
         return $query->orderBy('created_at', 'desc')->limit($limit)->get();
     }
 
-    /**
-     * Get invoice with complete details
-     */
-    public function findWithDetails(int $id): ?Invoice
-    {
-        return $this->model
-            ->with([
-                'company',
-                'branch',
-                'customer',
-                'creator',
-                'items.product',
-                'payments.receivedBy',
-                'deliveries',
-                'printJobs'
-            ])
-            ->find($id);
-    }
 
     /**
      * Get customer invoice history
@@ -366,5 +348,20 @@ public function getInvoicesRequiringPrintJobs(int $companyId): array
         'high_value' => $invoices->where('total_amount', '>', 25000)->count(),
         'recent' => $invoices->take(5)->toArray(),
     ];
+}
+public function findWithDetails(int $id): ?Invoice
+{
+    return $this->model
+        ->with([
+            'company',
+            'branch',
+            'customer',
+            'creator',
+            'items.product', // Make sure items are loaded with products
+            'payments.receivedBy',
+            'deliveries',
+            'printJobs'
+        ])
+        ->find($id);
 }
 }

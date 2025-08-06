@@ -1,5 +1,4 @@
 <?php
-// app/Http/Controllers/PrintJobController.php
 
 namespace App\Http\Controllers;
 
@@ -8,6 +7,7 @@ use App\Http\Requests\UpdatePrintJobRequest;
 use App\Repositories\PrintJobRepository;
 use App\Repositories\BranchRepository;
 use App\Repositories\InvoiceRepository;
+use App\Repositories\CustomerRepository;
 use App\Services\PrintJobService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
@@ -24,149 +24,305 @@ class PrintJobController extends Controller
         private PrintJobRepository $printJobRepository,
         private BranchRepository $branchRepository,
         private InvoiceRepository $invoiceRepository,
+        private CustomerRepository $customerRepository,
         private PrintJobService $printJobService
     ) {}
 
     /**
-     * Display production queue
+     * Display a listing of print jobs
      */
+    public function index(Request $request): Response
+    {
+        $this->authorize('view print jobs');
 
-    public function create(Request $request): Response
-{
-    $this->authorize('create print jobs');
+        $user = auth()->user();
+        $companyId = $user->company_id;
 
-    $user = auth()->user();
-    $companyId = $user->company_id;
-    $branchId = $user->branch_id;
+        $filters = [
+            'search' => $request->get('search'),
+            'status' => $request->get('status'),
+            'priority' => $request->get('priority'),
+            'branch_id' => $request->get('branch_id'),
+            'assigned_to' => $request->get('assigned_to'),
+            'job_type' => $request->get('job_type'),
+            'date_from' => $request->get('date_from'),
+            'date_to' => $request->get('date_to'),
+            'overdue' => $request->boolean('overdue'),
+        ];
 
-    // Get paid invoices that don't have print jobs yet
-    $availableInvoices = $this->invoiceRepository->getPaidInvoicesWithoutPrintJobs($companyId, $branchId);
-    
-    // Get branches for selection (if user can view all branches)
-    $branches = $user->can('view all branches') 
-        ? $this->branchRepository->getForDropdown($companyId)
-        : collect([['id' => $branchId, 'name' => $user->branch->branch_name]]);
-
-    // Get production staff for assignment
-    $productionStaff = $this->getProductionStaff($branchId);
-
-    // Get job type options
-    $jobTypes = [
-        'business_cards' => 'Business Cards',
-        'brochures' => 'Brochures',
-        'flyers' => 'Flyers',
-        'posters' => 'Posters',
-        'banners' => 'Banners',
-        'booklets' => 'Booklets',
-        'stickers' => 'Stickers',
-        'general_printing' => 'General Printing',
-        'custom' => 'Custom Job',
-    ];
-
-    return Inertia::render('Production/PrintJobs/Create', [
-        'available_invoices' => $availableInvoices,
-        'branches' => $branches,
-        'production_staff' => $productionStaff,
-        'job_types' => $jobTypes,
-        'priority_options' => [
-            'low' => 'Low',
-            'normal' => 'Normal', 
-            'medium' => 'Medium',
-            'high' => 'High',
-            'urgent' => 'Urgent'
-        ]
-    ]);
-}
-
-/**
- * Store manually created print job
- */
-public function storeManual(CreatePrintJobRequest $request): RedirectResponse
-{
-    try {
-        $validatedData = $request->getValidatedData();
-        
-        // If creating from invoice
-        if ($validatedData['invoice_id']) {
-            $invoice = $this->invoiceRepository->find($validatedData['invoice_id']);
-            
-            if (!$invoice) {
-                return back()->withErrors(['invoice_id' => 'Invoice not found']);
-            }
-
-            // Check if invoice is paid
-            if ($invoice->payment_status !== 'paid') {
-                return back()->withErrors(['invoice_id' => 'Invoice must be paid before creating print job']);
-            }
-
-            // Check if print job already exists
-            $existingJob = $this->printJobRepository->findByInvoice($invoice->id);
-            if ($existingJob) {
-                return redirect()
-                    ->route('production.print-jobs.show', $existingJob->id)
-                    ->with('info', 'Print job already exists for this invoice');
-            }
-
-            $printJob = $this->printJobService->createFromInvoice($invoice);
-        } 
-        // Manual job creation without invoice
-        else {
-            $printJob = $this->printJobService->createManualJob($validatedData);
+        // Apply branch restriction for non-admin users
+        if (!$user->can('view all branches') && $user->branch_id) {
+            $filters['branch_id'] = $user->branch_id;
         }
-        
-        return redirect()
-            ->route('production.print-jobs.show', $printJob->id)
-            ->with('success', 'Print job created successfully');
-            
-    } catch (\Exception $e) {
-        return back()
-            ->withInput()
-            ->withErrors(['error' => 'Failed to create print job: ' . $e->getMessage()]);
+
+        $printJobs = $this->printJobRepository->searchAndPaginate($companyId, $filters, 15);
+        $branches = $this->branchRepository->getForDropdown($companyId);
+        $stats = $this->printJobRepository->getStats($companyId, $filters['branch_id']);
+
+        // Get production staff for filters
+        $productionStaff = \App\Models\User::whereHas('roles', function ($query) {
+                $query->where('name', 'Production Staff');
+            })
+            ->where('status', 'active')
+            ->where('company_id', $companyId)
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        return Inertia::render('Production/PrintJobs/Index', [
+            'printJobs' => [
+                'data' => $printJobs->items(),
+                'current_page' => $printJobs->currentPage(),
+                'last_page' => $printJobs->lastPage(),
+                'per_page' => $printJobs->perPage(),
+                'total' => $printJobs->total(),
+                'from' => $printJobs->firstItem(),
+                'to' => $printJobs->lastItem(),
+            ],
+            'filters' => $filters,
+            'branches' => $branches,
+            'productionStaff' => $productionStaff,
+            'stats' => $stats,
+            'permissions' => [
+                'create' => $user->can('create print jobs'),
+                'edit' => $user->can('edit print jobs'),
+                'delete' => $user->can('delete print jobs'),
+                'view_all_branches' => $user->can('view all branches'),
+                'manage_production' => $user->can('manage production'),
+            ],
+            'jobTypes' => [
+                'business_cards' => 'Business Cards',
+                'brochures' => 'Brochures',
+                'flyers' => 'Flyers',
+                'posters' => 'Posters',
+                'banners' => 'Banners',
+                'booklets' => 'Booklets',
+                'stickers' => 'Stickers',
+                'general_printing' => 'General Printing',
+                'custom' => 'Custom Job',
+            ]
+        ]);
     }
-}
 
-/**
- * Get production staff for dropdown
+    /**
+     * Show the form for creating a new print job
+     */
+    public function create(Request $request): Response
+    {
+        $this->authorize('create print jobs');
+
+        $user = auth()->user();
+        $companyId = $user->company_id;
+        $branchId = $user->branch_id;
+
+        // Get paid invoices that don't have print jobs yet
+        $availableInvoices = $this->invoiceRepository->getPaidInvoicesWithoutPrintJobs($companyId, $branchId);
+        
+        // Get branches for selection (if user can view all branches)
+        $branches = $user->can('view all branches') 
+            ? $this->branchRepository->getForDropdown($companyId)
+            : collect([['id' => $branchId, 'name' => $user->branch->branch_name]]);
+
+        // Get production staff for assignment
+        $productionStaff = $this->getProductionStaff($branchId);
+
+        // Get job type options
+        $jobTypes = [
+            'business_cards' => 'Business Cards',
+            'brochures' => 'Brochures',
+            'flyers' => 'Flyers',
+            'posters' => 'Posters',
+            'banners' => 'Banners',
+            'booklets' => 'Booklets',
+            'stickers' => 'Stickers',
+            'general_printing' => 'General Printing',
+            'custom' => 'Custom Job',
+        ];
+
+        return Inertia::render('Production/PrintJobs/Create', [
+            'available_invoices' => $availableInvoices,
+            'branches' => $branches,
+            'production_staff' => $productionStaff,
+            'job_types' => $jobTypes,
+            'priority_options' => [
+                'low' => 'Low',
+                'normal' => 'Normal', 
+                'medium' => 'Medium',
+                'high' => 'High',
+                'urgent' => 'Urgent'
+            ]
+        ]);
+    }
+
+    /**
+     * Store manually created print job
+     */
+    public function storeManual(CreatePrintJobRequest $request): RedirectResponse
+    {
+        try {
+            $validatedData = $request->validated();
+            
+            // If creating from invoice
+            if (!empty($validatedData['invoice_id'])) {
+                // Load invoice with its items and related data
+                $invoice = $this->invoiceRepository->findWithDetails($validatedData['invoice_id']);
+                
+                if (!$invoice) {
+                    return back()->withErrors(['invoice_id' => 'Invoice not found']);
+                }
+
+                // Check if invoice belongs to user's company
+                if ($invoice->company_id !== auth()->user()->company_id) {
+                    return back()->withErrors(['invoice_id' => 'Unauthorized access to invoice']);
+                }
+
+                // Check if invoice is paid
+                if ($invoice->payment_status !== 'paid') {
+                    return back()->withErrors(['invoice_id' => 'Invoice must be paid before creating print job']);
+                }
+
+                // Check if print job already exists
+                $existingJob = $this->printJobRepository->findByInvoice($invoice->id);
+                if ($existingJob) {
+                    return redirect()
+                        ->route('production.print-jobs.show', $existingJob->id)
+                        ->with('info', 'Print job already exists for this invoice');
+                }
+
+                // Ensure invoice has items loaded
+                if (!$invoice->relationLoaded('items')) {
+                    $invoice->load('items.product');
+                }
+
+                // Check if invoice has items
+                if (!$invoice->items || $invoice->items->isEmpty()) {
+                    return back()->withErrors(['invoice_id' => 'Invoice has no items to create a print job for']);
+                }
+
+                // Create print job from invoice with manual data
+                $printJob = $this->printJobService->createFromInvoice($invoice, $validatedData);
+            } 
+            // Manual job creation without invoice
+            else {
+                $printJob = $this->printJobService->createManualJob($validatedData);
+            }
+            
+            return redirect()
+                ->route('production.print-jobs.show', $printJob->id)
+                ->with('success', 'Print job created successfully');
+                
+        } catch (\Exception $e) {
+            \Log::error('Print job creation failed', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $request->all(),
+            ]);
+
+            return back()
+                ->withInput()
+                ->withErrors(['error' => 'Failed to create print job: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Display the specified print job
+     */
+  /**
+ * Display the specified print job
  */
-private function getProductionStaff(int $branchId)
+public function show(int $id): Response
 {
-    return \App\Models\User::where('branch_id', $branchId)
-        ->whereHas('roles', function ($query) {
-            $query->where('name', 'Production Staff');
-        })
-        ->where('status', 'active')
-        ->select('id', 'name', 'email')
-        ->orderBy('name')
-        ->get();
-}
+    // Add debugging
+    \Log::info('PrintJob Show Method Called', [
+        'print_job_id' => $id,
+        'user_id' => auth()->id(),
+        'user_email' => auth()->user()->email ?? 'No user',
+    ]);
 
-/**
- * Create standalone print job (without invoice)
- */
-public function createStandalone(Request $request): Response
-{
-    $this->authorize('create standalone print jobs');
-
-    $user = auth()->user();
-    $companyId = $user->company_id;
-    $branchId = $user->branch_id;
-
-    // Get customers for selection
-    $customers = $this->customerRepository->getForDropdown($companyId);
+    $printJob = $this->printJobRepository->find($id);
     
-    // Get branches
-    $branches = $user->can('view all branches') 
-        ? $this->branchRepository->getForDropdown($companyId)
-        : collect([['id' => $branchId, 'name' => $user->branch->branch_name]]);
+    if (!$printJob) {
+        \Log::error('Print job not found', ['id' => $id]);
+        abort(404, 'Print job not found.');
+    }
 
-    // Get production staff
-    $productionStaff = $this->getProductionStaff($branchId);
+    \Log::info('Print job found', [
+        'print_job_id' => $printJob->id,
+        'print_job_number' => $printJob->job_number ?? 'No job number',
+        'branch_id' => $printJob->branch_id ?? 'No branch_id',
+        'company_id' => $printJob->company_id ?? 'No company_id',
+    ]);
 
-    return Inertia::render('Production/PrintJobs/CreateStandalone', [
-        'customers' => $customers,
-        'branches' => $branches,
-        'production_staff' => $productionStaff,
-        'job_types' => [
+    // Check authorization with debugging
+    $user = auth()->user();
+    \Log::info('User authorization check', [
+        'user_id' => $user->id,
+        'user_company_id' => $user->company_id ?? 'No company_id',
+        'user_branch_id' => $user->branch_id ?? 'No branch_id',
+        'can_view_production' => $user->can('view production'),
+        'can_view_all_branches' => $user->can('view all branches'),
+        'user_roles' => $user->roles->pluck('name')->toArray(),
+    ]);
+
+    try {
+        $this->authorize('view production');
+        \Log::info('Authorization passed');
+    } catch (\Exception $e) {
+        \Log::error('Authorization failed', [
+            'error' => $e->getMessage(),
+            'user_permissions' => $user->getAllPermissions()->pluck('name')->toArray(),
+        ]);
+        throw $e;
+    }
+
+    // Check branch access permissions
+    if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
+        \Log::error('Branch access denied', [
+            'user_branch_id' => $user->branch_id,
+            'print_job_branch_id' => $printJob->branch_id,
+        ]);
+        abort(403, 'You cannot view print jobs from other branches.');
+    }
+
+    // Check if print job belongs to user's company
+    if (isset($printJob->company_id) && $printJob->company_id !== $user->company_id) {
+        \Log::error('Company access denied', [
+            'user_company_id' => $user->company_id,
+            'print_job_company_id' => $printJob->company_id,
+        ]);
+        abort(403, 'You cannot view print jobs from other companies.');
+    }
+
+    \Log::info('All access checks passed, loading relationships');
+
+    // Load relationships
+    $printJob->load([
+        'invoice.customer',
+        'invoice.items.product',
+        'branch',
+        'assignedTo',
+        'productionStages' => function($query) {
+            $query->orderBy('stage_order');
+        }
+    ]);
+
+    // Get production staff for reassignment
+    $productionStaff = $this->getProductionStaff($printJob->branch_id);
+
+    \Log::info('Rendering show page');
+
+    return Inertia::render('Production/PrintJobs/Show', [
+        'printJob' => $printJob,
+        'productionStaff' => $productionStaff,
+        'permissions' => [
+            'edit' => $user->can('manage production'),
+            'delete' => $user->can('manage production'),
+            'manage_production' => $user->can('manage production'),
+            'assign_staff' => $user->can('assign production jobs'),
+            'update_priority' => $user->can('manage production'),
+        ],
+        'jobTypes' => [
             'business_cards' => 'Business Cards',
             'brochures' => 'Brochures',
             'flyers' => 'Flyers',
@@ -180,44 +336,335 @@ public function createStandalone(Request $request): Response
     ]);
 }
 
-/**
- * Store standalone print job
- */
-public function storeStandalone(Request $request): RedirectResponse
-{
-    $this->authorize('create standalone print jobs');
-
-    $request->validate([
-        'customer_id' => 'required|exists:customers,id',
-        'job_type' => 'required|string|max:100',
-        'job_title' => 'required|string|max:200',
-        'description' => 'required|string|max:1000',
-        'priority' => 'required|in:low,normal,medium,high,urgent',
-        'assigned_to' => 'nullable|exists:users,id',
-        'estimated_completion' => 'nullable|date|after:now',
-        'specifications' => 'nullable|array',
-        'design_files' => 'nullable|array',
-        'design_files.*' => 'file|mimes:pdf,jpg,jpeg,png,ai,psd|max:10240',
-        'customer_instructions' => 'nullable|string|max:1000',
-        'estimated_cost' => 'nullable|numeric|min:0',
-    ]);
-
-    try {
-        $printJob = $this->printJobService->createStandaloneJob($request->all());
+    /**
+     * Show the form for editing the specified print job
+     */
+    public function edit(int $id): Response
+    {
+        $printJob = $this->printJobRepository->find($id);
         
-        return redirect()
-            ->route('production.print-jobs.show', $printJob->id)
-            ->with('success', 'Standalone print job created successfully');
-            
-    } catch (\Exception $e) {
-        return back()
-            ->withInput()
-            ->withErrors(['error' => 'Failed to create print job: ' . $e->getMessage()]);
+        if (!$printJob) {
+            abort(404, 'Print job not found.');
+        }
+
+        $this->authorize('edit print jobs');
+
+        $user = auth()->user();
+        
+        // Check access permissions
+        if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
+            abort(403, 'You cannot edit print jobs from other branches.');
+        }
+
+        if (!$this->printJobRepository->canBeModified($id)) {
+            return redirect()->route('production.print-jobs.show', $id)
+                ->withErrors(['error' => 'Print job cannot be modified at this time.']);
+        }
+
+        // Load relationships
+        $printJob->load(['invoice.customer', 'branch', 'assignedTo']);
+
+        // Get production staff
+        $productionStaff = $this->getProductionStaff($printJob->branch_id);
+
+        // Get customers if this is a standalone job
+        $customers = $this->customerRepository->getForDropdown($user->company_id);
+
+        return Inertia::render('Production/PrintJobs/Edit', [
+            'printJob' => $printJob,
+            'productionStaff' => $productionStaff,
+            'customers' => $customers,
+            'jobTypes' => [
+                'business_cards' => 'Business Cards',
+                'brochures' => 'Brochures',
+                'flyers' => 'Flyers',
+                'posters' => 'Posters',
+                'banners' => 'Banners',
+                'booklets' => 'Booklets',
+                'stickers' => 'Stickers',
+                'general_printing' => 'General Printing',
+                'custom' => 'Custom Job',
+            ]
+        ]);
     }
- 
 
+    /**
+     * Update the specified print job
+     */
+    public function update(UpdatePrintJobRequest $request, int $id): RedirectResponse
+    {
+        try {
+            $printJob = $this->printJobRepository->findOrFail($id);
+            
+            $this->authorize('edit print jobs');
 
+            // Check access permissions
+            $user = auth()->user();
+            if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
+                abort(403, 'You cannot edit print jobs from other branches.');
+            }
 
+            if (!$this->printJobRepository->canBeModified($id)) {
+                return back()->withErrors(['error' => 'Print job cannot be modified at this time.']);
+            }
 
-}
+            $this->printJobRepository->update($id, $request->validated());
+
+            return redirect()
+                ->route('production.print-jobs.show', $id)
+                ->with('success', 'Print job updated successfully');
+
+        } catch (\Exception $e) {
+            \Log::error('Print job update failed', [
+                'print_job_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()
+                ->withInput()
+                ->withErrors(['error' => 'Print job update failed. Please try again.']);
+        }
+    }
+
+    /**
+     * Remove the specified print job
+     */
+    public function destroy(int $id): RedirectResponse
+    {
+        try {
+            $printJob = $this->printJobRepository->findOrFail($id);
+            
+            $this->authorize('delete print jobs');
+
+            // Check access permissions
+            $user = auth()->user();
+            if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
+                abort(403, 'You cannot delete print jobs from other branches.');
+            }
+
+            if (!$this->printJobRepository->canBeDeleted($id)) {
+                return back()->withErrors(['error' => 'Print job cannot be deleted at this time.']);
+            }
+
+            $this->printJobRepository->delete($id);
+
+            return redirect()
+                ->route('production.print-jobs.index')
+                ->with('success', 'Print job deleted successfully');
+
+        } catch (\Exception $e) {
+            \Log::error('Print job deletion failed', [
+                'print_job_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->withErrors(['error' => 'Print job deletion failed. Please try again.']);
+        }
+    }
+
+    /**
+     * Create standalone print job (without invoice)
+     */
+    public function createStandalone(Request $request): Response
+    {
+        $this->authorize('create standalone print jobs');
+
+        $user = auth()->user();
+        $companyId = $user->company_id;
+        $branchId = $user->branch_id;
+
+        // Get customers for selection
+        $customers = $this->customerRepository->getForDropdown($companyId);
+        
+        // Get branches
+        $branches = $user->can('view all branches') 
+            ? $this->branchRepository->getForDropdown($companyId)
+            : collect([['id' => $branchId, 'name' => $user->branch->branch_name]]);
+
+        // Get production staff
+        $productionStaff = $this->getProductionStaff($branchId);
+
+        return Inertia::render('Production/PrintJobs/CreateStandalone', [
+            'customers' => $customers,
+            'branches' => $branches,
+            'production_staff' => $productionStaff,
+            'job_types' => [
+                'business_cards' => 'Business Cards',
+                'brochures' => 'Brochures',
+                'flyers' => 'Flyers',
+                'posters' => 'Posters',
+                'banners' => 'Banners',
+                'booklets' => 'Booklets',
+                'stickers' => 'Stickers',
+                'general_printing' => 'General Printing',
+                'custom' => 'Custom Job',
+            ]
+        ]);
+    }
+
+    /**
+     * Store standalone print job
+     */
+    public function storeStandalone(Request $request): RedirectResponse
+    {
+        $this->authorize('create standalone print jobs');
+
+        $request->validate([
+            'customer_id' => 'required|exists:customers,id',
+            'job_type' => 'required|string|max:100',
+            'job_title' => 'required|string|max:200',
+            'description' => 'required|string|max:1000',
+            'priority' => 'required|in:low,normal,medium,high,urgent',
+            'assigned_to' => 'nullable|exists:users,id',
+            'estimated_completion' => 'nullable|date|after:now',
+            'specifications' => 'nullable|array',
+            'design_files' => 'nullable|array',
+            'design_files.*' => 'file|mimes:pdf,jpg,jpeg,png,ai,psd|max:10240',
+            'customer_instructions' => 'nullable|string|max:1000',
+            'estimated_cost' => 'nullable|numeric|min:0',
+        ]);
+
+        try {
+            $printJob = $this->printJobService->createStandaloneJob($request->all());
+            
+            return redirect()
+                ->route('production.print-jobs.show', $printJob->id)
+                ->with('success', 'Standalone print job created successfully');
+                
+        } catch (\Exception $e) {
+            return back()
+                ->withInput()
+                ->withErrors(['error' => 'Failed to create print job: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Start production for a print job
+     */
+    public function startProduction(int $id): RedirectResponse
+    {
+        try {
+            $printJob = $this->printJobRepository->findOrFail($id);
+            
+            $this->authorize('manage production');
+
+            // Check access permissions
+            $user = auth()->user();
+            if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
+                abort(403, 'You cannot manage production for jobs from other branches.');
+            }
+
+            // Update status to start production
+            $this->printJobRepository->update($id, [
+                'production_status' => 'in_progress',
+                'started_at' => now()
+            ]);
+
+            return redirect()
+                ->route('production.print-jobs.show', $id)
+                ->with('success', 'Production started successfully');
+
+        } catch (\Exception $e) {
+            \Log::error('Start production failed', [
+                'print_job_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->withErrors(['error' => 'Failed to start production. Please try again.']);
+        }
+    }
+
+    /**
+     * Assign staff to print job
+     */
+    public function assignStaff(Request $request, int $id): RedirectResponse
+    {
+        $request->validate([
+            'assigned_to' => 'required|exists:users,id',
+            'notes' => 'nullable|string|max:500'
+        ]);
+
+        try {
+            $printJob = $this->printJobRepository->findOrFail($id);
+            
+            $this->authorize('manage production');
+
+            // Check access permissions
+            $user = auth()->user();
+            if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
+                abort(403, 'You cannot assign staff to jobs from other branches.');
+            }
+
+            $this->printJobService->assignToStaff($printJob, $request->assigned_to, $request->notes);
+
+            return redirect()
+                ->route('production.print-jobs.show', $id)
+                ->with('success', 'Staff assigned successfully');
+
+        } catch (\Exception $e) {
+            \Log::error('Staff assignment failed', [
+                'print_job_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->withErrors(['error' => 'Failed to assign staff. Please try again.']);
+        }
+    }
+
+    /**
+     * Update priority of print job
+     */
+    public function updatePriority(Request $request, int $id): RedirectResponse
+    {
+        $request->validate([
+            'priority' => 'required|in:low,normal,medium,high,urgent',
+            'reason' => 'nullable|string|max:500'
+        ]);
+
+        try {
+            $printJob = $this->printJobRepository->findOrFail($id);
+            
+            $this->authorize('manage production');
+
+            // Check access permissions
+            $user = auth()->user();
+            if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
+                abort(403, 'You cannot update priority for jobs from other branches.');
+            }
+
+            $this->printJobService->updatePriority($printJob, $request->priority, $request->reason);
+
+            return redirect()
+                ->route('production.print-jobs.show', $id)
+                ->with('success', 'Priority updated successfully');
+
+        } catch (\Exception $e) {
+            \Log::error('Priority update failed', [
+                'print_job_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->withErrors(['error' => 'Failed to update priority. Please try again.']);
+        }
+    }
+
+    /**
+     * Get production staff for dropdown
+     */
+    private function getProductionStaff(int $branchId)
+    {
+        return \App\Models\User::where('branch_id', $branchId)
+            ->whereHas('roles', function ($query) {
+                $query->where('name', 'Production Staff');
+            })
+            ->where('status', 'active')
+            ->select('id', 'name', 'email')
+            ->orderBy('name')
+            ->get();
+    }
 }

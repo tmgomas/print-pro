@@ -16,6 +16,22 @@ class PrintJobRepository extends BaseRepository
     }
 
     /**
+     * Find print job by invoice ID
+     */
+    public function findByInvoice(int $invoiceId): ?PrintJob
+    {
+        return $this->model->where('invoice_id', $invoiceId)->first();
+    }
+
+    /**
+     * Check if print job exists for invoice
+     */
+    public function existsForInvoice(int $invoiceId): bool
+    {
+        return $this->model->where('invoice_id', $invoiceId)->exists();
+    }
+
+    /**
      * Search and paginate print jobs with filters
      */
     public function searchAndPaginate(int $companyId, array $filters = [], int $perPage = 15): LengthAwarePaginator
@@ -162,5 +178,128 @@ class PrintJobRepository extends BaseRepository
             ->orderBy('priority', 'desc')
             ->orderBy('estimated_completion', 'asc')
             ->get();
+    }
+
+    /**
+     * Get print jobs by company
+     */
+    public function getByCompany(int $companyId, ?int $branchId = null): Collection
+    {
+        $query = $this->model->newQuery()
+            ->with(['invoice.customer', 'branch', 'assignedTo'])
+            ->where('company_id', $companyId);
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        return $query->orderBy('created_at', 'desc')->get();
+    }
+
+    /**
+     * Get recent print jobs
+     */
+    public function getRecentJobs(int $companyId, int $limit = 10, ?int $branchId = null): Collection
+    {
+        $query = $this->model->newQuery()
+            ->with(['invoice.customer', 'branch'])
+            ->where('company_id', $companyId)
+            ->select('id', 'job_number', 'job_type', 'production_status', 'priority', 'invoice_id', 'branch_id', 'created_at');
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        return $query->orderBy('created_at', 'desc')->limit($limit)->get();
+    }
+
+    /**
+     * Get print jobs requiring attention (overdue, high priority, etc.)
+     */
+    public function getJobsRequiringAttention(int $companyId, ?int $branchId = null): array
+    {
+        $query = $this->model->newQuery()
+            ->with(['invoice.customer', 'branch'])
+            ->where('company_id', $companyId)
+            ->whereNotIn('production_status', ['completed', 'cancelled']);
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        $jobs = $query->get();
+
+        return [
+            'overdue' => $jobs->where('estimated_completion', '<', now())->count(),
+            'urgent' => $jobs->where('priority', 'urgent')->count(),
+            'high_priority' => $jobs->whereIn('priority', ['high', 'urgent'])->count(),
+            'pending' => $jobs->where('production_status', 'pending')->count(),
+            'on_hold' => $jobs->where('production_status', 'on_hold')->count(),
+        ];
+    }
+
+    /**
+     * Check if print job can be deleted
+     */
+    public function canBeDeleted(int $id): bool
+    {
+        $printJob = $this->find($id);
+        
+        if (!$printJob) {
+            return false;
+        }
+
+        // Cannot delete if production has started
+        return $printJob->production_status === 'pending' && 
+               $printJob->productionStages()->where('stage_status', '!=', 'pending')->count() === 0;
+    }
+
+    /**
+     * Check if print job can be modified
+     */
+    public function canBeModified(int $id): bool
+    {
+        $printJob = $this->find($id);
+        
+        if (!$printJob) {
+            return false;
+        }
+
+        // Can modify if not completed or cancelled
+        return !in_array($printJob->production_status, ['completed', 'cancelled']);
+    }
+
+    /**
+     * Get print jobs by status
+     */
+    public function getByStatus(string $status, int $companyId, ?int $branchId = null): Collection
+    {
+        $query = $this->model->newQuery()
+            ->with(['invoice.customer', 'branch', 'assignedTo'])
+            ->where('company_id', $companyId)
+            ->where('production_status', $status);
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        return $query->orderBy('created_at', 'desc')->get();
+    }
+
+    /**
+     * Get print jobs by priority
+     */
+    public function getByPriority(string $priority, int $companyId, ?int $branchId = null): Collection
+    {
+        $query = $this->model->newQuery()
+            ->with(['invoice.customer', 'branch', 'assignedTo'])
+            ->where('company_id', $companyId)
+            ->where('priority', $priority);
+
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        return $query->orderBy('estimated_completion', 'asc')->get();
     }
 }
