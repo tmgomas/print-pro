@@ -287,4 +287,84 @@ class InvoiceRepository extends BaseRepository
 
         return $query->orderBy('invoice_date', 'desc')->get();
     }
+
+    public function getPaidInvoicesWithoutPrintJobs(int $companyId, ?int $branchId = null): Collection
+{
+    $query = $this->model->newQuery()
+        ->with(['customer', 'invoiceItems.product'])
+        ->where('company_id', $companyId)
+        ->where('payment_status', 'paid')
+        ->whereDoesntHave('printJobs'); // Assuming you have this relationship
+
+    if ($branchId) {
+        $query->where('branch_id', $branchId);
+    }
+
+    return $query->orderBy('invoice_date', 'desc')
+                ->limit(50) // Limit to recent 50 invoices
+                ->get();
+}
+
+/**
+ * Get invoices ready for print job creation
+ */
+public function getInvoicesReadyForProduction(int $companyId, ?int $branchId = null): Collection
+{
+    $query = $this->model->newQuery()
+        ->with(['customer', 'invoiceItems.product', 'payments'])
+        ->where('company_id', $companyId)
+        ->where('payment_status', 'paid')
+        ->where('status', 'confirmed')
+        ->whereDoesntHave('printJobs');
+
+    if ($branchId) {
+        $query->where('branch_id', $branchId);
+    }
+
+    return $query->orderBy('due_date', 'asc')
+                ->orderBy('total_amount', 'desc')
+                ->get();
+}
+
+/**
+ * Find invoice by invoice number
+ */
+public function findByInvoiceNumber(string $invoiceNumber): ?\App\Models\Invoice
+{
+    return $this->model->where('invoice_number', $invoiceNumber)->first();
+}
+
+/**
+ * Get invoices by customer
+ */
+public function getByCustomer(int $customerId, int $limit = 10): Collection
+{
+    return $this->model->newQuery()
+        ->with(['invoiceItems.product'])
+        ->where('customer_id', $customerId)
+        ->orderBy('invoice_date', 'desc')
+        ->limit($limit)
+        ->get();
+}
+
+/**
+ * Get invoices requiring print jobs (dashboard widget)
+ */
+public function getInvoicesRequiringPrintJobs(int $companyId): array
+{
+    $invoices = $this->model->newQuery()
+        ->with(['customer'])
+        ->where('company_id', $companyId)
+        ->where('payment_status', 'paid')
+        ->whereDoesntHave('printJobs')
+        ->orderBy('due_date', 'asc')
+        ->get();
+
+    return [
+        'total' => $invoices->count(),
+        'urgent' => $invoices->where('due_date', '<=', now()->addDays(2))->count(),
+        'high_value' => $invoices->where('total_amount', '>', 25000)->count(),
+        'recent' => $invoices->take(5)->toArray(),
+    ];
+}
 }
