@@ -80,9 +80,13 @@ class PrintJob extends Model
 
     public function productionStages(): HasMany
     {
-        return $this->hasMany(ProductionStage::class)->orderBy('stage_order');
+        return $this->hasMany(ProductionStage::class, 'print_job_id', 'id')
+                    ->orderBy('stage_order');
     }
-
+public function stages(): HasMany
+    {
+        return $this->productionStages();
+    }
     public function currentStage(): HasMany
     {
         return $this->hasMany(ProductionStage::class)

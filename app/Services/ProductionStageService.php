@@ -16,7 +16,222 @@ class ProductionStageService extends BaseService
     {
         parent::__construct($repository);
     }
+public function completeStage(ProductionStage $stage, int $userId, ?string $notes = null, ?array $stageData = null): bool
+{
+    try {
+        return DB::transaction(function () use ($stage, $userId, $notes, $stageData) {
+            if (!in_array($stage->stage_status, ['in_progress', 'requires_approval'])) {
+                throw new \Exception('Cannot complete stage in current status');
+            }
 
+            $duration = null;
+            if ($stage->started_at) {
+                $duration = $stage->started_at->diffInMinutes(now());
+            }
+
+            $updateData = [
+                'stage_status' => 'completed',
+                'completed_at' => now(),
+                'actual_duration' => $duration,
+                'updated_by' => $userId,
+            ];
+
+            if ($notes) {
+                $updateData['notes'] = ($stage->notes ?? '') . "\n" . now()->format('Y-m-d H:i:s') . ": Completed - " . $notes;
+            }
+
+            if ($stageData) {
+                $updateData['stage_data'] = array_merge($stage->stage_data ?? [], $stageData);
+            }
+
+            $updated = $this->repository->update($stage->id, $updateData);
+
+            if ($updated) {
+                // Auto-advance to next stage
+                $this->advanceToNextStage($stage->fresh(), $userId);
+                
+                // Check if entire print job is completed
+                $this->checkPrintJobCompletion($stage->printJob);
+            }
+
+            return $updated;
+        });
+    } catch (\Exception $e) {
+        $this->handleException($e, 'stage completion');
+        throw $e;
+    }
+}
+
+/**
+ * Approve stage with auto-advance
+ */
+public function approveStage(ProductionStage $stage, int $userId, ?string $notes = null): bool
+{
+    try {
+        return DB::transaction(function () use ($stage, $userId, $notes) {
+            if ($stage->stage_status !== 'requires_approval') {
+                throw new \Exception('Stage does not require approval');
+            }
+
+            $updateData = [
+                'stage_status' => 'completed',
+                'completed_at' => now(),
+                'approved_by' => $userId,
+                'approval_status' => 'approved',
+            ];
+
+            if ($stage->requires_customer_approval) {
+                $updateData['customer_approved_at'] = now();
+            }
+
+            if ($notes) {
+                $updateData['notes'] = ($stage->notes ?? '') . "\n" . now()->format('Y-m-d H:i:s') . ": Approved - " . $notes;
+            }
+
+            $updated = $this->repository->update($stage->id, $updateData);
+
+            if ($updated) {
+                // Auto-advance to next stage after approval
+                $this->advanceToNextStage($stage->fresh(), $userId);
+                
+                // Check if entire print job is completed
+                $this->checkPrintJobCompletion($stage->printJob);
+            }
+
+            return $updated;
+        });
+    } catch (\Exception $e) {
+        $this->handleException($e, 'stage approval');
+        throw $e;
+    }
+}
+
+/**
+ * Enhanced auto-advance to next stage
+ */
+private function advanceToNextStage(ProductionStage $currentStage, int $userId): void
+{
+    try {
+        $nextStage = $this->repository->getNextStage(
+            $currentStage->print_job_id, 
+            $currentStage->stage_order
+        );
+
+        if ($nextStage && $nextStage->stage_status === 'pending') {
+            $updateData = [
+                'updated_by' => $userId,
+                'notes' => ($nextStage->notes ?? '') . "\n" . now()->format('Y-m-d H:i:s') . ": Auto-advanced from " . $currentStage->stage_name
+            ];
+
+            // Different logic based on stage requirements
+            if ($nextStage->requires_customer_approval) {
+                // Customer approval stages should go to 'requires_approval' status
+                $updateData['stage_status'] = 'requires_approval';
+                \Log::info('Stage advanced to requires_approval', [
+                    'current_stage' => $currentStage->stage_name,
+                    'next_stage' => $nextStage->stage_name,
+                    'requires_customer_approval' => true
+                ]);
+            } else {
+                // Regular stages should go to 'ready' status
+                $updateData['stage_status'] = 'ready';
+                \Log::info('Stage advanced to ready', [
+                    'current_stage' => $currentStage->stage_name,
+                    'next_stage' => $nextStage->stage_name,
+                    'requires_customer_approval' => false
+                ]);
+            }
+
+            $this->repository->update($nextStage->id, $updateData);
+        }
+    } catch (\Exception $e) {
+        \Log::error('Failed to advance to next stage', [
+            'current_stage_id' => $currentStage->id,
+            'current_stage_name' => $currentStage->stage_name,
+            'error' => $e->getMessage()
+        ]);
+        // Don't throw exception - just log error so main operation doesn't fail
+    }
+}
+
+/**
+ * Check if print job is completed
+ */
+private function checkPrintJobCompletion(PrintJob $printJob): void
+{
+    try {
+        $totalStages = $printJob->productionStages()->count();
+        $completedStages = $printJob->productionStages()
+            ->where('stage_status', 'completed')
+            ->count();
+
+        \Log::info('Checking print job completion', [
+            'print_job_id' => $printJob->id,
+            'total_stages' => $totalStages,
+            'completed_stages' => $completedStages
+        ]);
+
+        if ($completedStages === $totalStages && $totalStages > 0) {
+            $printJob->update([
+                'production_status' => 'completed',
+                'actual_completion' => now(),
+                'completion_percentage' => 100
+            ]);
+
+            \Log::info('Print job marked as completed', [
+                'print_job_id' => $printJob->id
+            ]);
+
+            // Fire completion event if it exists
+            try {
+                if (class_exists('\App\Events\PrintJobCompleted')) {
+                    event(new \App\Events\PrintJobCompleted($printJob));
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Failed to fire PrintJobCompleted event', [
+                    'error' => $e->getMessage()
+                ]);
+            }
+        } else {
+            // Update completion percentage
+            $percentage = $totalStages > 0 ? round(($completedStages / $totalStages) * 100) : 0;
+            $printJob->update(['completion_percentage' => $percentage]);
+        }
+    } catch (\Exception $e) {
+        \Log::error('Failed to check print job completion', [
+            'print_job_id' => $printJob->id,
+            'error' => $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * Start stage with ready status check
+ */
+public function startStage(ProductionStage $stage, int $userId, ?string $notes = null): bool
+{
+    try {
+        // Allow starting from both 'pending' and 'ready' status
+        if (!in_array($stage->stage_status, ['pending', 'ready'])) {
+            throw new \Exception('Cannot start stage - current status: ' . $stage->stage_status);
+        }
+
+        $updateData = [
+            'stage_status' => 'in_progress',
+            'started_at' => now(),
+            'updated_by' => $userId,
+        ];
+
+        if ($notes) {
+            $updateData['notes'] = ($stage->notes ?? '') . "\n" . now()->format('Y-m-d H:i:s') . ": Started - " . $notes;
+        }
+
+        return $this->repository->update($stage->id, $updateData);
+    } catch (\Exception $e) {
+        $this->handleException($e, 'stage start');
+        throw $e;
+    }
+}
     /**
      * Update production stage with business logic
      */
@@ -47,76 +262,9 @@ class ProductionStageService extends BaseService
         }
     }
 
-    /**
-     * Start production stage
-     */
-    public function startStage(ProductionStage $stage, int $userId, ?string $notes = null): bool
-    {
-        try {
-            if ($stage->stage_status !== 'pending') {
-                throw new \Exception('Cannot start stage that is not pending');
-            }
 
-            $updateData = [
-                'stage_status' => 'in_progress',
-                'started_at' => now(),
-                'updated_by' => $userId,
-            ];
 
-            if ($notes) {
-                $updateData['notes'] = $stage->notes . "\n" . now()->format('Y-m-d H:i:s') . ": Started - " . $notes;
-            }
 
-            return $this->repository->update($stage->id, $updateData);
-        } catch (\Exception $e) {
-            $this->handleException($e, 'stage start');
-            throw $e;
-        }
-    }
-
-    /**
-     * Complete production stage
-     */
-    public function completeStage(ProductionStage $stage, int $userId, ?string $notes = null, ?array $stageData = null): bool
-    {
-        try {
-            if (!in_array($stage->stage_status, ['in_progress', 'requires_approval'])) {
-                throw new \Exception('Cannot complete stage in current status');
-            }
-
-            $duration = null;
-            if ($stage->started_at) {
-                $duration = $stage->started_at->diffInMinutes(now());
-            }
-
-            $updateData = [
-                'stage_status' => 'completed',
-                'completed_at' => now(),
-                'actual_duration' => $duration,
-                'updated_by' => $userId,
-            ];
-
-            if ($notes) {
-                $updateData['notes'] = $stage->notes . "\n" . now()->format('Y-m-d H:i:s') . ": Completed - " . $notes;
-            }
-
-            if ($stageData) {
-                $updateData['stage_data'] = array_merge($stage->stage_data ?? [], $stageData);
-            }
-
-            $updated = $this->repository->update($stage->id, $updateData);
-
-            if ($updated) {
-                $this->checkPrintJobCompletion($stage->printJob);
-                $this->advanceToNextStage($stage);
-            }
-
-            return $updated;
-        } catch (\Exception $e) {
-            $this->handleException($e, 'stage completion');
-            throw $e;
-        }
-    }
 
     /**
      * Get pending approvals for a company
@@ -194,93 +342,8 @@ class ProductionStageService extends BaseService
         ];
     }
 
-    /**
-     * Check if print job is completed and update status
-     */
-    private function checkPrintJobCompletion(PrintJob $printJob): void
-    {
-        $totalStages = $printJob->productionStages()->count();
-        $completedStages = $printJob->productionStages()
-            ->where('stage_status', 'completed')
-            ->count();
 
-        // Update print job progress
-        $printJob->update([
-            'completed_stages' => $completedStages,
-            'total_stages' => $totalStages
-        ]);
 
-        // If all stages are completed
-        if ($completedStages === $totalStages) {
-            $printJob->update([
-                'production_status' => 'completed',
-                'actual_completion' => now()
-            ]);
-
-            // Fire completion event
-            event(new PrintJobCompleted($printJob));
-        }
-    }
-
-    /**
-     * Advance to next stage automatically
-     */
-    private function advanceToNextStage(ProductionStage $currentStage): void
-    {
-        $nextStage = $this->repository->getNextStage(
-            $currentStage->print_job_id, 
-            $currentStage->stage_order
-        );
-
-        if ($nextStage && $nextStage->stage_status === 'pending') {
-            // If next stage doesn't require customer approval, make it ready
-            if (!$nextStage->requires_customer_approval) {
-                $this->repository->update($nextStage->id, [
-                    'stage_status' => 'ready',
-                    'updated_by' => $currentStage->updated_by
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Handle stage approvals
-     */
-    public function approveStage(ProductionStage $stage, int $userId, ?string $notes = null): bool
-    {
-        try {
-            if ($stage->stage_status !== 'requires_approval') {
-                throw new \Exception('Stage does not require approval');
-            }
-
-            $updateData = [
-                'stage_status' => 'completed',
-                'completed_at' => now(),
-                'approved_by' => $userId,
-                'approval_status' => 'approved',
-            ];
-
-            if ($stage->requires_customer_approval) {
-                $updateData['customer_approved_at'] = now();
-            }
-
-            if ($notes) {
-                $updateData['notes'] = $stage->notes . "\n" . now()->format('Y-m-d H:i:s') . ": Approved - " . $notes;
-            }
-
-            $updated = $this->repository->update($stage->id, $updateData);
-
-            if ($updated) {
-                $this->checkPrintJobCompletion($stage->printJob);
-                $this->advanceToNextStage($stage);
-            }
-
-            return $updated;
-        } catch (\Exception $e) {
-            $this->handleException($e, 'stage approval');
-            throw $e;
-        }
-    }
 
     /**
      * Reject stage

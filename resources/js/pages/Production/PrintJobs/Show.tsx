@@ -30,8 +30,28 @@ import {
     Package,
     Printer,
     Timer,
-    Target
+    Target,
+    Pause,
+    RotateCcw,
+    X,
+    ArrowRight,
+    FileCheck,
+    Clock4,
+    AlertCircle
 } from 'lucide-react';
+
+interface ProductionStage {
+    id: number;
+    stage_name: string;
+    stage_status: string;
+    started_at?: string;
+    completed_at?: string;
+    estimated_duration?: number;
+    actual_duration?: number;
+    stage_order: number;
+    notes?: string;
+    requires_customer_approval?: boolean;
+}
 
 interface PrintJob {
     id: number;
@@ -85,17 +105,7 @@ interface PrintJob {
         name: string;
         email: string;
     };
-    productionStages: Array<{
-        id: number;
-        stage_name: string;
-        stage_status: string;
-        started_at?: string;
-        completed_at?: string;
-        estimated_duration?: number;
-        actual_duration?: number;
-        stage_order: number;
-        notes?: string;
-    }>;
+    productionStages: ProductionStage[];
 }
 
 interface ProductionStaff {
@@ -118,13 +128,43 @@ interface Props {
 }
 
 export default function PrintJobShow({ printJob, productionStaff, permissions, jobTypes }: Props) {
+    // Debug: Log the received data
+    console.log('PrintJob Show Component Received Data:', {
+        printJob,
+        productionStagesCount: printJob?.productionStages?.length || 0,
+        productionStages: printJob?.productionStages || [],
+        productionStatus: printJob?.production_status,
+        permissions,
+        jobTypes
+    });
+
     const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
     const [isPriorityDialogOpen, setIsPriorityDialogOpen] = useState(false);
+    const [stageActionDialog, setStageActionDialog] = useState<{
+        isOpen: boolean;
+        stage: ProductionStage | null;
+        action: 'start' | 'complete' | 'hold' | 'resume' | 'approve' | 'reject' | null;
+    }>({
+        isOpen: false,
+        stage: null,
+        action: null
+    });
 
     // Add safety checks for potentially undefined arrays
     const safeProductionStaff = productionStaff || [];
     const safeProductionStages = printJob?.productionStages || [];
     const safeInvoiceItems = printJob?.invoice?.items || [];
+
+    // Debug production stages
+    console.log('Safe Production Stages Debug:', {
+        printJobExists: !!printJob,
+        hasProductionStages: !!printJob?.productionStages,
+        productionStagesType: typeof printJob?.productionStages,
+        productionStagesLength: printJob?.productionStages?.length,
+        safeProductionStagesLength: safeProductionStages.length,
+        firstStage: safeProductionStages[0] || 'No first stage',
+        allStages: safeProductionStages
+    });
 
     // Assignment form
     const { data: assignData, setData: setAssignData, post: postAssign, processing: assignProcessing, errors: assignErrors, reset: resetAssign } = useForm({
@@ -138,8 +178,16 @@ export default function PrintJobShow({ printJob, productionStaff, permissions, j
         reason: '',
     });
 
+    // Stage action form
+    const { data: stageActionData, setData: setStageActionData, post: postStageAction, processing: stageActionProcessing, errors: stageActionErrors, reset: resetStageAction } = useForm({
+        notes: '',
+        reason: '',
+        stage_data: {},
+    });
+
     const statusColors: Record<string, string> = {
         pending: 'bg-gray-500',
+        ready: 'bg-blue-400',
         in_progress: 'bg-blue-500',
         design_review: 'bg-purple-500',
         design_approved: 'bg-green-500',
@@ -149,7 +197,9 @@ export default function PrintJobShow({ printJob, productionStaff, permissions, j
         quality_check: 'bg-yellow-500',
         completed: 'bg-green-600',
         on_hold: 'bg-gray-600',
-        cancelled: 'bg-red-500'
+        cancelled: 'bg-red-500',
+        requires_approval: 'bg-orange-500',
+        rejected: 'bg-red-600'
     };
 
     const priorityColors: Record<string, string> = {
@@ -190,6 +240,33 @@ export default function PrintJobShow({ printJob, productionStaff, permissions, j
         });
     };
 
+    const handleStageAction = (stage: ProductionStage, action: 'start' | 'complete' | 'hold' | 'resume' | 'approve' | 'reject') => {
+        setStageActionDialog({
+            isOpen: true,
+            stage,
+            action
+        });
+        resetStageAction();
+    };
+
+    const submitStageAction = (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        const { stage, action } = stageActionDialog;
+        if (!stage || !action) return;
+
+        const routeName = `production.stages.${action}`;
+        
+        postStageAction(route(routeName, stage.id), {
+            onSuccess: () => {
+                setStageActionDialog({ isOpen: false, stage: null, action: null });
+                resetStageAction();
+                // Refresh the page to show updated stage data
+                router.reload();
+            }
+        });
+    };
+
     const handleDelete = () => {
         if (confirm('Are you sure you want to delete this print job?')) {
             router.delete(route('production.print-jobs.destroy', printJob.id));
@@ -212,6 +289,7 @@ export default function PrintJobShow({ printJob, productionStaff, permissions, j
     const getStageStatusColor = (status: string) => {
         const colors = {
             pending: 'bg-gray-100 text-gray-800',
+            ready: 'bg-blue-100 text-blue-800',
             in_progress: 'bg-blue-100 text-blue-800',
             completed: 'bg-green-100 text-green-800',
             on_hold: 'bg-yellow-100 text-yellow-800',
@@ -219,6 +297,163 @@ export default function PrintJobShow({ printJob, productionStaff, permissions, j
             rejected: 'bg-red-100 text-red-800',
         };
         return colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-800';
+    };
+
+    const getStageIcon = (status: string) => {
+        const icons = {
+            pending: Clock4,
+            ready: ArrowRight,
+            in_progress: PlayCircle,
+            completed: CheckCircle,
+            on_hold: Pause,
+            requires_approval: FileCheck,
+            rejected: X,
+        };
+        const Icon = icons[status as keyof typeof icons] || Clock4;
+        return <Icon className="h-4 w-4" />;
+    };
+
+    const canPerformStageAction = (stage: ProductionStage, action: string): boolean => {
+        if (!permissions.manage_production) return false;
+
+        switch (action) {
+            case 'start':
+                return stage.stage_status === 'ready' || stage.stage_status === 'pending';
+            case 'complete':
+                return stage.stage_status === 'in_progress';
+            case 'hold':
+                return stage.stage_status === 'in_progress' || stage.stage_status === 'ready';
+            case 'resume':
+                return stage.stage_status === 'on_hold';
+            case 'approve':
+                return stage.stage_status === 'requires_approval';
+            case 'reject':
+                return stage.stage_status === 'requires_approval' || stage.stage_status === 'in_progress';
+            default:
+                return false;
+        }
+    };
+
+    const getStageActionButtons = (stage: ProductionStage) => {
+        const buttons = [];
+
+        // Only show actions if user has manage_production permission
+        if (!permissions.manage_production) return null;
+
+        if (canPerformStageAction(stage, 'start')) {
+            buttons.push(
+                <Button
+                    key="start"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleStageAction(stage, 'start')}
+                    className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
+                >
+                    <PlayCircle className="h-3 w-3 mr-1" />
+                    Start
+                </Button>
+            );
+        }
+
+        if (canPerformStageAction(stage, 'complete')) {
+            buttons.push(
+                <Button
+                    key="complete"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleStageAction(stage, 'complete')}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200"
+                >
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Complete
+                </Button>
+            );
+        }
+
+        if (canPerformStageAction(stage, 'hold')) {
+            buttons.push(
+                <Button
+                    key="hold"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleStageAction(stage, 'hold')}
+                    className="text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 border-yellow-200"
+                >
+                    <Pause className="h-3 w-3 mr-1" />
+                    Hold
+                </Button>
+            );
+        }
+
+        if (canPerformStageAction(stage, 'resume')) {
+            buttons.push(
+                <Button
+                    key="resume"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleStageAction(stage, 'resume')}
+                    className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
+                >
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                    Resume
+                </Button>
+            );
+        }
+
+        if (canPerformStageAction(stage, 'approve')) {
+            buttons.push(
+                <Button
+                    key="approve"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleStageAction(stage, 'approve')}
+                    className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
+                >
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Approve
+                </Button>
+            );
+        }
+
+        if (canPerformStageAction(stage, 'reject')) {
+            buttons.push(
+                <Button
+                    key="reject"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleStageAction(stage, 'reject')}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                >
+                    <X className="h-3 w-3 mr-1" />
+                    Reject
+                </Button>
+            );
+        }
+
+        return buttons.length > 0 ? (
+            <div className="flex gap-1 flex-wrap">
+                {buttons}
+            </div>
+        ) : null;
+    };
+
+    const getActionDialogTitle = () => {
+        const { action, stage } = stageActionDialog;
+        if (!action || !stage) return '';
+
+        const stageDisplayName = stage.stage_name.replace('_', ' ').charAt(0).toUpperCase() + 
+                                stage.stage_name.replace('_', ' ').slice(1);
+        
+        const actionNames = {
+            start: 'Start',
+            complete: 'Complete',
+            hold: 'Put on Hold',
+            resume: 'Resume',
+            approve: 'Approve',
+            reject: 'Reject'
+        };
+
+        return `${actionNames[action]} Stage: ${stageDisplayName}`;
     };
 
     // Early return if printJob is not available
@@ -534,7 +769,7 @@ export default function PrintJobShow({ printJob, productionStaff, permissions, j
                                 </CardContent>
                             </Card>
 
-                            {/* Production Stages */}
+                            {/* Enhanced Production Stages */}
                             <Card>
                                 <CardHeader>
                                     <CardTitle className="flex items-center">
@@ -545,47 +780,185 @@ export default function PrintJobShow({ printJob, productionStaff, permissions, j
                                 <CardContent>
                                     <div className="space-y-4">
                                         {safeProductionStages.length > 0 ? (
-                                            safeProductionStages.map((stage, index) => (
-                                                <div key={stage.id} className="flex items-center space-x-4 p-4 rounded-lg border">
-                                                    <div className="flex-shrink-0">
-                                                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium">
-                                                            {index + 1}
+                                            <div className="space-y-4">
+                                                {safeProductionStages.map((stage, index) => (
+                                                    <div key={stage.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                                                        <div className="flex items-start space-x-4">
+                                                            <div className="flex-shrink-0">
+                                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium ${
+                                                                    stage.stage_status === 'completed' ? 'bg-green-100 text-green-700' :
+                                                                    stage.stage_status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                                                                    stage.stage_status === 'ready' ? 'bg-blue-50 text-blue-600' :
+                                                                    stage.stage_status === 'on_hold' ? 'bg-yellow-100 text-yellow-700' :
+                                                                    stage.stage_status === 'requires_approval' ? 'bg-orange-100 text-orange-700' :
+                                                                    stage.stage_status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                                                    'bg-gray-100 text-gray-600'
+                                                                }`}>
+                                                                    {getStageIcon(stage.stage_status)}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-start justify-between mb-2">
+                                                                    <div className="flex-1">
+                                                                        <div className="flex items-center space-x-3 mb-2">
+                                                                            <h4 className="text-base font-medium text-gray-900">
+                                                                                {stage.stage_name.replace('_', ' ').charAt(0).toUpperCase() + 
+                                                                                 stage.stage_name.replace('_', ' ').slice(1)}
+                                                                            </h4>
+                                                                            <Badge className={getStageStatusColor(stage.stage_status)}>
+                                                                                {stage.stage_status.replace('_', ' ').charAt(0).toUpperCase() + 
+                                                                                 stage.stage_status.replace('_', ' ').slice(1)}
+                                                                            </Badge>
+                                                                        </div>
+
+                                                                        {/* Duration and Progress Info */}
+                                                                        <div className="flex items-center gap-4 text-xs text-gray-500 mb-2">
+                                                                            {stage.estimated_duration && (
+                                                                                <span className="flex items-center gap-1">
+                                                                                    <Clock className="h-3 w-3" />
+                                                                                    Est: {stage.estimated_duration}min
+                                                                                </span>
+                                                                            )}
+                                                                            {stage.actual_duration && (
+                                                                                <span className="flex items-center gap-1">
+                                                                                    <CheckCircle className="h-3 w-3" />
+                                                                                    Actual: {stage.actual_duration}min
+                                                                                </span>
+                                                                            )}
+                                                                            {stage.requires_customer_approval && (
+                                                                                <span className="flex items-center gap-1 text-orange-600">
+                                                                                    <FileCheck className="h-3 w-3" />
+                                                                                    Customer Approval Required
+                                                                                </span>
+                                                                            )}
+                                                                            <span className="text-gray-400 ml-auto">#{stage.stage_order}</span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Stage Actions */}
+                                                                    <div className="flex-shrink-0 ml-4">
+                                                                        {getStageActionButtons(stage)}
+                                                                    </div>
+                                                                </div>
+
+                                                                {stage.notes && (
+                                                                    <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                                                                        {stage.notes}
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="mt-2 flex justify-between items-center text-xs text-gray-400">
+                                                                    <div className="flex gap-4">
+                                                                        {stage.started_at && (
+                                                                            <span>Started: {formatDate(stage.started_at)}</span>
+                                                                        )}
+                                                                        {stage.completed_at && (
+                                                                            <span>Completed: {formatDate(stage.completed_at)}</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center justify-between">
-                                                            <h4 className="text-sm font-medium text-gray-900">
-                                                                {stage.stage_name.replace('_', ' ').charAt(0).toUpperCase() + 
-                                                                 stage.stage_name.replace('_', ' ').slice(1)}
-                                                            </h4>
-                                                            <Badge className={getStageStatusColor(stage.stage_status)}>
-                                                                {stage.stage_status.replace('_', ' ').charAt(0).toUpperCase() + 
-                                                                 stage.stage_status.replace('_', ' ').slice(1)}
-                                                            </Badge>
-                                                        </div>
-                                                        {stage.notes && (
-                                                            <p className="mt-1 text-sm text-gray-500">{stage.notes}</p>
-                                                        )}
-                                                        <div className="mt-1 flex space-x-4 text-xs text-gray-400">
-                                                            {stage.started_at && (
-                                                                <span>Started: {formatDate(stage.started_at)}</span>
-                                                            )}
-                                                            {stage.completed_at && (
-                                                                <span>Completed: {formatDate(stage.completed_at)}</span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))
+                                                ))}
+                                            </div>
                                         ) : (
                                             <div className="text-center py-8 text-gray-500">
                                                 <Settings className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                                                 <p>No production stages defined for this job.</p>
+                                                <p className="text-sm mt-2">Stages will be created automatically when production starts.</p>
                                             </div>
                                         )}
                                     </div>
                                 </CardContent>
                             </Card>
+
+                            {/* Stage Action Dialog */}
+                            <Dialog open={stageActionDialog.isOpen} onOpenChange={(open) => {
+                                if (!open) {
+                                    setStageActionDialog({ isOpen: false, stage: null, action: null });
+                                }
+                            }}>
+                                <DialogContent className="max-w-md">
+                                    <DialogHeader>
+                                        <DialogTitle>{getActionDialogTitle()}</DialogTitle>
+                                    </DialogHeader>
+                                    <form onSubmit={submitStageAction} className="space-y-4">
+                                        <div>
+                                            <Label htmlFor="stage_notes">Notes</Label>
+                                            <Textarea
+                                                id="stage_notes"
+                                                value={stageActionData.notes}
+                                                onChange={(e) => setStageActionData('notes', e.target.value)}
+                                                placeholder={`Add notes for this ${stageActionDialog.action}...`}
+                                                rows={3}
+                                            />
+                                            {stageActionErrors.notes && (
+                                                <p className="text-sm text-red-600 mt-1">{stageActionErrors.notes}</p>
+                                            )}
+                                        </div>
+
+                                        {stageActionDialog.action === 'reject' && (
+                                            <div>
+                                                <Label htmlFor="reason">Reason for Rejection <span className="text-red-500">*</span></Label>
+                                                <Textarea
+                                                    id="reason"
+                                                    value={stageActionData.reason}
+                                                    onChange={(e) => setStageActionData('reason', e.target.value)}
+                                                    placeholder="Please provide a reason for rejecting this stage..."
+                                                    rows={3}
+                                                    required
+                                                />
+                                                {stageActionErrors.reason && (
+                                                    <p className="text-sm text-red-600 mt-1">{stageActionErrors.reason}</p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {stageActionDialog.action === 'hold' && (
+                                            <div>
+                                                <Label htmlFor="reason">Reason for Hold <span className="text-red-500">*</span></Label>
+                                                <Textarea
+                                                    id="reason"
+                                                    value={stageActionData.reason}
+                                                    onChange={(e) => setStageActionData('reason', e.target.value)}
+                                                    placeholder="Please provide a reason for putting this stage on hold..."
+                                                    rows={3}
+                                                    required
+                                                />
+                                                {stageActionErrors.reason && (
+                                                    <p className="text-sm text-red-600 mt-1">{stageActionErrors.reason}</p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="flex justify-end space-x-2">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                onClick={() => setStageActionDialog({ isOpen: false, stage: null, action: null })}
+                                                disabled={stageActionProcessing}
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button 
+                                                type="submit" 
+                                                disabled={stageActionProcessing}
+                                                className={
+                                                    stageActionDialog.action === 'reject' ? 'bg-red-600 hover:bg-red-700' :
+                                                    stageActionDialog.action === 'approve' ? 'bg-green-600 hover:bg-green-700' :
+                                                    stageActionDialog.action === 'complete' ? 'bg-blue-600 hover:bg-blue-700' :
+                                                    stageActionDialog.action === 'start' ? 'bg-green-600 hover:bg-green-700' :
+                                                    ''
+                                                }
+                                            >
+                                                {stageActionProcessing ? 'Processing...' : 
+                                                    stageActionDialog.action?.charAt(0).toUpperCase() + stageActionDialog.action?.slice(1)}
+                                            </Button>
+                                        </div>
+                                    </form>
+                                </DialogContent>
+                            </Dialog>
 
                             {/* Instructions & Notes */}
                             {(printJob.customer_instructions || printJob.production_notes || printJob.special_instructions) && (
@@ -702,6 +1075,57 @@ export default function PrintJobShow({ printJob, productionStaff, permissions, j
                                     </Button>
                                 </CardContent>
                             </Card>
+
+                            {/* Production Progress Summary */}
+                            {safeProductionStages.length > 0 && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>Stage Summary</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between text-sm">
+                                                <span>Total Stages:</span>
+                                                <span className="font-medium">{safeProductionStages.length}</span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span>Completed:</span>
+                                                <span className="font-medium text-green-600">
+                                                    {safeProductionStages.filter(s => s.stage_status === 'completed').length}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span>In Progress:</span>
+                                                <span className="font-medium text-blue-600">
+                                                    {safeProductionStages.filter(s => s.stage_status === 'in_progress').length}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span>Pending:</span>
+                                                <span className="font-medium text-gray-600">
+                                                    {safeProductionStages.filter(s => ['pending', 'ready'].includes(s.stage_status)).length}
+                                                </span>
+                                            </div>
+                                            {safeProductionStages.filter(s => s.stage_status === 'on_hold').length > 0 && (
+                                                <div className="flex justify-between text-sm">
+                                                    <span>On Hold:</span>
+                                                    <span className="font-medium text-yellow-600">
+                                                        {safeProductionStages.filter(s => s.stage_status === 'on_hold').length}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {safeProductionStages.filter(s => s.stage_status === 'requires_approval').length > 0 && (
+                                                <div className="flex justify-between text-sm">
+                                                    <span>Awaiting Approval:</span>
+                                                    <span className="font-medium text-orange-600">
+                                                        {safeProductionStages.filter(s => s.stage_status === 'requires_approval').length}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
                         </div>
                     </div>
                 </div>

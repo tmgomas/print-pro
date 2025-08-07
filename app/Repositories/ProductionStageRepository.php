@@ -12,19 +12,60 @@ class ProductionStageRepository extends BaseRepository
     {
         parent::__construct($model);
     }
+public function getNextStage(int $printJobId, int $currentStageOrder): ?ProductionStage
+{
+    return $this->model->newQuery()
+                      ->where('print_job_id', $printJobId)
+                      ->where('stage_order', $currentStageOrder + 1)
+                      ->first();
+}
 
-    /**
-     * Get stages by print job
-     */
-    public function getByPrintJob(int $printJobId): Collection
-    {
-        return $this->model->newQuery()
-                          ->with(['updatedBy', 'approvedBy'])
-                          ->where('print_job_id', $printJobId)
-                          ->orderBy('stage_order')
-                          ->get();
-    }
+/**
+ * Get previous stage in sequence
+ */
+public function getPreviousStage(int $printJobId, int $currentStageOrder): ?ProductionStage
+{
+    return $this->model->newQuery()
+                      ->where('print_job_id', $printJobId)
+                      ->where('stage_order', $currentStageOrder - 1)
+                      ->first();
+}
 
+/**
+ * Get all stages for a print job ordered by stage_order
+ */
+public function getByPrintJob(int $printJobId): Collection
+{
+    return $this->model->newQuery()
+                      ->where('print_job_id', $printJobId)
+                      ->orderBy('stage_order')
+                      ->get();
+}
+
+/**
+ * Get current active stage (in progress)
+ */
+public function getCurrentActiveStage(int $printJobId): ?ProductionStage
+{
+    return $this->model->newQuery()
+                      ->where('print_job_id', $printJobId)
+                      ->where('stage_status', 'in_progress')
+                      ->orderBy('stage_order')
+                      ->first();
+}
+
+/**
+ * Get next ready stage
+ */
+public function getNextReadyStage(int $printJobId): ?ProductionStage
+{
+    return $this->model->newQuery()
+                      ->where('print_job_id', $printJobId)
+                      ->whereIn('stage_status', ['ready', 'pending'])
+                      ->orderBy('stage_order')
+                      ->first();
+}
+ 
     /**
      * Get pending approvals for company
      */
@@ -116,29 +157,9 @@ class ProductionStageRepository extends BaseRepository
         ];
     }
 
-    /**
-     * Get next stage in sequence
-     */
-    public function getNextStage(int $printJobId, int $currentStageOrder): ?ProductionStage
-    {
-        return $this->model->newQuery()
-                          ->where('print_job_id', $printJobId)
-                          ->where('stage_order', '>', $currentStageOrder)
-                          ->orderBy('stage_order', 'asc')
-                          ->first();
-    }
 
-    /**
-     * Get previous stage in sequence
-     */
-    public function getPreviousStage(int $printJobId, int $currentStageOrder): ?ProductionStage
-    {
-        return $this->model->newQuery()
-                          ->where('print_job_id', $printJobId)
-                          ->where('stage_order', '<', $currentStageOrder)
-                          ->orderBy('stage_order', 'desc')
-                          ->first();
-    }
+
+
 
     /**
      * Get stages by status for branch

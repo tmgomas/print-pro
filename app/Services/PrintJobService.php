@@ -23,6 +23,195 @@ class PrintJobService extends BaseService
         parent::__construct($repository);
         $this->stageRepository = $stageRepository;
     }
+
+    
+/**
+ * Start production for a print job with complete workflow
+ */
+public function startProduction(PrintJob $printJob): bool
+{
+     
+    try {
+        return DB::transaction(function () use ($printJob) {
+           
+            // 1. Update print job status
+            $updated = $this->repository->update($printJob->id, [
+                'production_status' => 'design_review',
+                'started_at' => now(),
+                'production_notes' => ($printJob->production_notes ?? '') . 
+                    "\n" . now()->format('Y-m-d H:i:s') . ": Production started by " . auth()->user()->name
+            ]);
+
+            if (!$updated) {
+                throw new \Exception('Failed to update print job status');
+            }
+
+            // Refresh the model to get latest data
+            $printJob = $printJob->fresh(['productionStages']);
+
+            // 2. Handle production stages
+            if ($printJob->productionStages->isEmpty()) {
+                // Create default stages if none exist
+                $this->createProductionStages($printJob);
+                $printJob = $printJob->fresh(['productionStages']);
+            }
+
+            // 3. Start the first production stage
+            $firstStage = $printJob->productionStages()
+                ->where('stage_status', 'pending')
+                ->orderBy('stage_order')
+                ->first();
+
+            if ($firstStage) {
+                // Update first stage to "ready" (ready to start)
+                $stageUpdated = $this->stageRepository->update($firstStage->id, [
+                    'stage_status' => 'ready',
+                    'updated_by' => auth()->id(),
+                    'notes' => ($firstStage->notes ?? '') . 
+                        "\n" . now()->format('Y-m-d H:i:s') . ": Stage ready for production - " . 
+                        $firstStage->stage_name
+                ]);
+
+                if (!$stageUpdated) {
+                    throw new \Exception('Failed to start production stage');
+                }
+
+                \Log::info('Production started successfully', [
+                    'print_job_id' => $printJob->id,
+                    'first_stage_id' => $firstStage->id,
+                    'first_stage_name' => $firstStage->stage_name,
+                    'user_id' => auth()->id()
+                ]);
+            } else {
+                \Log::warning('No production stages found for print job', [
+                    'print_job_id' => $printJob->id
+                ]);
+            }
+
+            // 4. Fire production started event (if event exists)
+            try {
+                if (class_exists('\App\Events\ProductionStarted')) {
+                    event(new \App\Events\ProductionStarted($printJob->fresh()));
+                }
+            } catch (\Exception $e) {
+                // Don't fail the entire operation if event fails
+                \Log::warning('Failed to fire ProductionStarted event', [
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            return true;
+        });
+    } catch (\Exception $e) {
+        \Log::error('Production start failed', [
+            'print_job_id' => $printJob->id,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        throw $e;
+    }
+}
+
+/**
+ * Create default production stages for print job
+ */
+private function createProductionStages(PrintJob $printJob): void
+{
+    try {
+        $defaultStages = $this->getDefaultStagesForJobType($printJob->job_type);
+        
+        foreach ($defaultStages as $index => $stage) {
+            $this->stageRepository->create([
+                'print_job_id' => $printJob->id,
+                'stage_name' => $stage['name'],
+                'stage_status' => 'pending',
+                'stage_order' => $index + 1,
+                'estimated_duration' => $stage['estimated_duration'],
+                'requires_customer_approval' => $stage['requires_approval'] ?? false,
+                'updated_by' => auth()->id()
+            ]);
+        }
+
+        \Log::info('Default production stages created', [
+            'print_job_id' => $printJob->id,
+            'job_type' => $printJob->job_type,
+            'stages_count' => count($defaultStages)
+        ]);
+        
+    } catch (\Exception $e) {
+        \Log::error('Failed to create production stages', [
+            'print_job_id' => $printJob->id,
+            'error' => $e->getMessage()
+        ]);
+        throw $e;
+    }
+}
+
+/**
+ * Get default stages for different job types
+ */
+private function getDefaultStagesForJobType(string $jobType): array
+{
+    $stageTemplates = [
+        'business_cards' => [
+            ['name' => 'design_review', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 60, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'cutting', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ],
+        'brochures' => [
+            ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 180, 'requires_approval' => false],
+            ['name' => 'folding', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 45, 'requires_approval' => false],
+        ],
+        'flyers' => [
+            ['name' => 'design_review', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 60, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'cutting', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ],
+        'posters' => [
+            ['name' => 'design_review', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 90, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'cutting', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ],
+        'banners' => [
+            ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
+            ['name' => 'material_preparation', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 180, 'requires_approval' => false],
+            ['name' => 'finishing', 'estimated_duration' => 90, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 45, 'requires_approval' => false],
+        ],
+        'default' => [
+            ['name' => 'design_review', 'estimated_duration' => 45, 'requires_approval' => false],
+            ['name' => 'customer_approval', 'estimated_duration' => 90, 'requires_approval' => true],
+            ['name' => 'pre_press_setup', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
+            ['name' => 'finishing', 'estimated_duration' => 60, 'requires_approval' => false],
+            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
+            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
+        ]
+    ];
+
+    return $stageTemplates[$jobType] ?? $stageTemplates['default'];
+}
 public function createManualJob(array $data): PrintJob
 {
     try {
@@ -309,6 +498,7 @@ private function estimateCompletionForJobType(string $jobType): \Carbon\Carbon
     return now()->addHours($estimatedHours);
 }
 
+
 /**
  * Create print job from existing template
  */
@@ -562,123 +752,7 @@ public function duplicateJob(PrintJob $originalJob, array $overrideData = []): P
 /**
  * Create default production stages for print job
  */
-private function createProductionStages(PrintJob $printJob): void
-{
-    try {
-        $defaultStages = $this->getDefaultStagesForJobType($printJob->job_type);
-        
-        foreach ($defaultStages as $index => $stage) {
-            $this->stageRepository->create([
-                'print_job_id' => $printJob->id,
-                'stage_name' => $stage['name'],
-                'stage_status' => 'pending',
-                'stage_order' => $index + 1,
-                'estimated_duration' => $stage['estimated_duration'],
-                'requires_customer_approval' => $stage['requires_approval'] ?? false,
-                'updated_by' => Auth::id()
-            ]);
-        }
-    } catch (\Exception $e) {
-        // Log the error but don't fail the print job creation
-        \Log::warning('Failed to create production stages for print job', [
-            'print_job_id' => $printJob->id,
-            'error' => $e->getMessage()
-        ]);
-    }
-}
 
-/**
- * Get default stages for different job types
- */
-private function getDefaultStagesForJobType(string $jobType): array
-{
-    $stageTemplates = [
-        'business_cards' => [
-            ['name' => 'design_review', 'estimated_duration' => 30, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 60, 'requires_approval' => true],
-            ['name' => 'pre_press_setup', 'estimated_duration' => 45, 'requires_approval' => false],
-            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
-            ['name' => 'cutting', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
-        ],
-        'brochures' => [
-            ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
-            ['name' => 'pre_press_setup', 'estimated_duration' => 90, 'requires_approval' => false],
-            ['name' => 'printing_process', 'estimated_duration' => 180, 'requires_approval' => false],
-            ['name' => 'folding', 'estimated_duration' => 90, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 45, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
-        ],
-        'flyers' => [
-            ['name' => 'design_review', 'estimated_duration' => 45, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 90, 'requires_approval' => true],
-            ['name' => 'pre_press_setup', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
-            ['name' => 'cutting', 'estimated_duration' => 45, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 20, 'requires_approval' => false],
-        ],
-        'posters' => [
-            ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
-            ['name' => 'pre_press_setup', 'estimated_duration' => 75, 'requires_approval' => false],
-            ['name' => 'printing_process', 'estimated_duration' => 180, 'requires_approval' => false],
-            ['name' => 'cutting', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 45, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
-        ],
-        'banners' => [
-            ['name' => 'design_review', 'estimated_duration' => 90, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 180, 'requires_approval' => true],
-            ['name' => 'material_preparation', 'estimated_duration' => 120, 'requires_approval' => false],
-            ['name' => 'printing_process', 'estimated_duration' => 300, 'requires_approval' => false],
-            ['name' => 'finishing', 'estimated_duration' => 180, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 45, 'requires_approval' => false],
-        ],
-        'booklets' => [
-            ['name' => 'design_review', 'estimated_duration' => 120, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 240, 'requires_approval' => true],
-            ['name' => 'pre_press_setup', 'estimated_duration' => 180, 'requires_approval' => false],
-            ['name' => 'printing_process', 'estimated_duration' => 480, 'requires_approval' => false],
-            ['name' => 'binding', 'estimated_duration' => 240, 'requires_approval' => false],
-            ['name' => 'cutting', 'estimated_duration' => 120, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 90, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 60, 'requires_approval' => false],
-        ],
-        'stickers' => [
-            ['name' => 'design_review', 'estimated_duration' => 30, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 60, 'requires_approval' => true],
-            ['name' => 'pre_press_setup', 'estimated_duration' => 45, 'requires_approval' => false],
-            ['name' => 'printing_process', 'estimated_duration' => 120, 'requires_approval' => false],
-            ['name' => 'die_cutting', 'estimated_duration' => 90, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
-        ],
-        'general_printing' => [
-            ['name' => 'design_review', 'estimated_duration' => 45, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 90, 'requires_approval' => true],
-            ['name' => 'pre_press_setup', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'printing_process', 'estimated_duration' => 150, 'requires_approval' => false],
-            ['name' => 'finishing', 'estimated_duration' => 90, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 30, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 30, 'requires_approval' => false],
-        ],
-        'custom' => [
-            ['name' => 'design_review', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'customer_approval', 'estimated_duration' => 120, 'requires_approval' => true],
-            ['name' => 'preparation', 'estimated_duration' => 180, 'requires_approval' => false],
-            ['name' => 'production', 'estimated_duration' => 480, 'requires_approval' => false],
-            ['name' => 'finishing', 'estimated_duration' => 240, 'requires_approval' => false],
-            ['name' => 'quality_inspection', 'estimated_duration' => 60, 'requires_approval' => false],
-            ['name' => 'packaging', 'estimated_duration' => 45, 'requires_approval' => false],
-        ]
-    ];
-
-    return $stageTemplates[$jobType] ?? $stageTemplates['general_printing'];
-}
 
   
 }

@@ -12,7 +12,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Storage;
-
+use Illuminate\Http\RedirectResponse;  // ✅ Add this
 class ProductionStageController extends Controller
 {
     use AuthorizesRequests;
@@ -76,235 +76,212 @@ class ProductionStageController extends Controller
         }
     }
 
-    /**
-     * Start production stage
-     */
-    public function start(Request $request, int $id): JsonResponse
-    {
-        $stage = $this->stageRepository->find($id);
-        
-        if (!$stage) {
-            return response()->json(['error' => 'Production stage not found'], 404);
-        }
 
-        $this->authorize('update', $stage);
-
-        $request->validate([
-            'notes' => 'nullable|string|max:500'
-        ]);
-
-        try {
-            $success = $this->stageService->startStage($stage, auth()->id(), $request->notes);
-
-            if ($success) {
-                return response()->json([
-                    'message' => 'Production stage started successfully',
-                    'stage' => $stage->fresh(['updatedBy'])
-                ]);
-            }
-
-            return response()->json(['error' => 'Cannot start this stage'], 400);
-            
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+/**
+ * Start production stage
+ */
+public function start(Request $request, int $id): RedirectResponse
+{
+    $stage = $this->stageRepository->find($id);
+    
+    if (!$stage) {
+        return back()->withErrors(['error' => 'Production stage not found']);
     }
 
-    /**
-     * Complete production stage
-     */
-    public function complete(Request $request, int $id): JsonResponse
-    {
-        $stage = $this->stageRepository->find($id);
+    $this->authorize('update production status', $stage);
+
+    $request->validate([
+        'notes' => 'nullable|string|max:500'
+    ]);
+
+    try {
+        $success = $this->stageService->startStage($stage, auth()->id(), $request->notes);
+
+        if ($success) {
+            return back()->with('success', 'Production stage started successfully');
+        }
+
+        return back()->withErrors(['error' => 'Cannot start this stage']);
         
-        if (!$stage) {
-            return response()->json(['error' => 'Production stage not found'], 404);
-        }
-
-        $this->authorize('update', $stage);
-
-        $request->validate([
-            'notes' => 'nullable|string|max:500',
-            'stage_data' => 'nullable|array',
-            'attachments' => 'nullable|array',
-            'attachments.*' => 'file|mimes:jpg,jpeg,png,pdf|max:5120'
+    } catch (\Exception $e) {
+        \Log::error('Stage start failed', [
+            'stage_id' => $id,
+            'error' => $e->getMessage()
         ]);
+        
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
 
-        try {
-            // Handle file uploads
-            $stageData = $request->stage_data ?? [];
-            if ($request->hasFile('attachments')) {
-                $attachments = [];
-                foreach ($request->file('attachments') as $file) {
-                    $path = $file->store('production-stages/' . $stage->id, 'public');
-                    $attachments[] = [
-                        'path' => $path,
-                        'type' => $file->getClientMimeType(),
-                        'original_name' => $file->getClientOriginalName(),
-                        'size' => $file->getSize(),
-                        'uploaded_at' => now()->toISOString(),
-                        'uploaded_by' => auth()->id()
-                    ];
-                }
-                $stageData['attachments'] = $attachments;
-            }
-
-            $success = $this->stageService->completeStage(
-                $stage, 
-                auth()->id(), 
-                $request->notes, 
-                $stageData
-            );
-
-            if ($success) {
-                return response()->json([
-                    'message' => 'Production stage completed successfully',
-                    'stage' => $stage->fresh(['updatedBy', 'printJob'])
-                ]);
-            }
-
-            return response()->json(['error' => 'Cannot complete this stage'], 400);
-            
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+/**
+ * Complete production stage
+ */
+public function complete(Request $request, int $id): RedirectResponse
+{
+    $stage = $this->stageRepository->find($id);
+    
+    if (!$stage) {
+        return back()->withErrors(['error' => 'Production stage not found']);
     }
 
-    /**
-     * Put stage on hold
-     */
-    public function hold(Request $request, int $id): JsonResponse
-    {
-        $stage = $this->stageRepository->find($id);
+    $this->authorize('update production status', $stage);
+
+    $request->validate([
+        'notes' => 'nullable|string|max:500',
+        'stage_data' => 'nullable|array',
+    ]);
+
+    try {
+        $success = $this->stageService->completeStage(
+            $stage, 
+            auth()->id(), 
+            $request->notes, 
+            $request->stage_data
+        );
+
+        if ($success) {
+            return back()->with('success', 'Production stage completed successfully');
+        }
+
+        return back()->withErrors(['error' => 'Cannot complete this stage']);
         
-        if (!$stage) {
-            return response()->json(['error' => 'Production stage not found'], 404);
-        }
-
-        $this->authorize('update', $stage);
-
-        $request->validate([
-            'reason' => 'required|string|max:500'
+    } catch (\Exception $e) {
+        \Log::error('Stage completion failed', [
+            'stage_id' => $id,
+            'error' => $e->getMessage()
         ]);
+        
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
 
-        try {
-            $success = $this->stageService->holdStage($stage, auth()->id(), $request->reason);
-
-            if ($success) {
-                return response()->json([
-                    'message' => 'Production stage put on hold',
-                    'stage' => $stage->fresh(['updatedBy'])
-                ]);
-            }
-
-            return response()->json(['error' => 'Cannot put this stage on hold'], 400);
-            
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+/**
+ * Put stage on hold
+ */
+public function hold(Request $request, int $id): RedirectResponse
+{
+    $stage = $this->stageRepository->find($id);
+    
+    if (!$stage) {
+        return back()->withErrors(['error' => 'Production stage not found']);
     }
 
-    /**
-     * Resume stage from hold
-     */
-    public function resume(Request $request, int $id): JsonResponse
-    {
-        $stage = $this->stageRepository->find($id);
+    $this->authorize('update production status', $stage);
+
+    $request->validate([
+        'reason' => 'required|string|max:500'
+    ]);
+
+    try {
+        $success = $this->stageService->holdStage($stage, auth()->id(), $request->reason);
+
+        if ($success) {
+            return back()->with('success', 'Production stage put on hold');
+        }
+
+        return back()->withErrors(['error' => 'Cannot put this stage on hold']);
         
-        if (!$stage) {
-            return response()->json(['error' => 'Production stage not found'], 404);
-        }
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
 
-        $this->authorize('update', $stage);
-
-        $request->validate([
-            'notes' => 'nullable|string|max:500'
-        ]);
-
-        try {
-            $success = $this->stageService->resumeStage($stage, auth()->id(), $request->notes);
-
-            if ($success) {
-                return response()->json([
-                    'message' => 'Production stage resumed',
-                    'stage' => $stage->fresh(['updatedBy'])
-                ]);
-            }
-
-            return response()->json(['error' => 'Cannot resume this stage'], 400);
-            
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+/**
+ * Resume stage from hold
+ */
+public function resume(Request $request, int $id): RedirectResponse
+{
+    $stage = $this->stageRepository->find($id);
+    
+    if (!$stage) {
+        return back()->withErrors(['error' => 'Production stage not found']);
     }
 
-    /**
-     * Approve stage (for customer approvals)
-     */
-    public function approve(Request $request, int $id): JsonResponse
-    {
-        $stage = $this->stageRepository->find($id);
+    $this->authorize('update production status', $stage);
+
+    $request->validate([
+        'notes' => 'nullable|string|max:500'
+    ]);
+
+    try {
+        $success = $this->stageService->resumeStage($stage, auth()->id(), $request->notes);
+
+        if ($success) {
+            return back()->with('success', 'Production stage resumed');
+        }
+
+        return back()->withErrors(['error' => 'Cannot resume this stage']);
         
-        if (!$stage) {
-            return response()->json(['error' => 'Production stage not found'], 404);
-        }
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
 
-        $this->authorize('approve', $stage);
-
-        $request->validate([
-            'notes' => 'nullable|string|max:500'
-        ]);
-
-        try {
-            $success = $this->stageService->approveStage($stage, auth()->id(), $request->notes);
-
-            if ($success) {
-                return response()->json([
-                    'message' => 'Production stage approved',
-                    'stage' => $stage->fresh(['updatedBy', 'approvedBy'])
-                ]);
-            }
-
-            return response()->json(['error' => 'Cannot approve this stage'], 400);
-            
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+/**
+ * Approve stage
+ */
+public function approve(Request $request, int $id): RedirectResponse
+{
+    $stage = $this->stageRepository->find($id);
+    
+    if (!$stage) {
+        return back()->withErrors(['error' => 'Production stage not found']);
     }
 
-    /**
-     * Reject stage
-     */
-    public function reject(Request $request, int $id): JsonResponse
-    {
-        $stage = $this->stageRepository->find($id);
+    $this->authorize('update production status', $stage);
+
+    $request->validate([
+        'notes' => 'nullable|string|max:500'
+    ]);
+
+    try {
+        $success = $this->stageService->approveStage($stage, auth()->id(), $request->notes);
+
+        if ($success) {
+            return back()->with('success', 'Production stage approved');
+        }
+
+        return back()->withErrors(['error' => 'Cannot approve this stage']);
         
-        if (!$stage) {
-            return response()->json(['error' => 'Production stage not found'], 404);
-        }
-
-        $this->authorize('update', $stage);
-
-        $request->validate([
-            'reason' => 'required|string|max:500'
-        ]);
-
-        try {
-            $success = $this->stageService->rejectStage($stage, auth()->id(), $request->reason);
-
-            if ($success) {
-                return response()->json([
-                    'message' => 'Production stage rejected',
-                    'stage' => $stage->fresh(['updatedBy'])
-                ]);
-            }
-
-            return response()->json(['error' => 'Cannot reject this stage'], 400);
-            
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
     }
+}
+
+/**
+ * Reject stage
+ */
+public function reject(Request $request, int $id): RedirectResponse
+{
+    $stage = $this->stageRepository->find($id);
+    
+    if (!$stage) {
+        return back()->withErrors(['error' => 'Production stage not found']);
+    }
+
+    $this->authorize('update production status', $stage);
+
+    $request->validate([
+        'reason' => 'required|string|max:500',
+        'notes' => 'nullable|string|max:500'
+    ]);
+
+    try {
+        $success = $this->stageService->rejectStage($stage, auth()->id(), $request->reason);
+
+        if ($success) {
+            return back()->with('success', 'Production stage rejected');
+        }
+
+        return back()->withErrors(['error' => 'Cannot reject this stage']);
+        
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
+
+
+
 
     /**
      * Skip stage
@@ -317,7 +294,7 @@ class ProductionStageController extends Controller
             return response()->json(['error' => 'Production stage not found'], 404);
         }
 
-        $this->authorize('update', $stage);
+        $this->authorize('update production status', $stage);
 
         $request->validate([
             'reason' => 'required|string|max:500'

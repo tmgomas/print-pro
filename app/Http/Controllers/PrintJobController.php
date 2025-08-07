@@ -233,70 +233,27 @@ class PrintJobController extends Controller
  */
 public function show(int $id): Response
 {
-    // Add debugging
     \Log::info('PrintJob Show Method Called', [
         'print_job_id' => $id,
         'user_id' => auth()->id(),
-        'user_email' => auth()->user()->email ?? 'No user',
     ]);
 
     $printJob = $this->printJobRepository->find($id);
     
     if (!$printJob) {
-        \Log::error('Print job not found', ['id' => $id]);
         abort(404, 'Print job not found.');
     }
 
-    \Log::info('Print job found', [
-        'print_job_id' => $printJob->id,
-        'print_job_number' => $printJob->job_number ?? 'No job number',
-        'branch_id' => $printJob->branch_id ?? 'No branch_id',
-        'company_id' => $printJob->company_id ?? 'No company_id',
-    ]);
-
-    // Check authorization with debugging
+    // Authorization checks...
     $user = auth()->user();
-    \Log::info('User authorization check', [
-        'user_id' => $user->id,
-        'user_company_id' => $user->company_id ?? 'No company_id',
-        'user_branch_id' => $user->branch_id ?? 'No branch_id',
-        'can_view_production' => $user->can('view production'),
-        'can_view_all_branches' => $user->can('view all branches'),
-        'user_roles' => $user->roles->pluck('name')->toArray(),
-    ]);
+    $this->authorize('view production');
 
-    try {
-        $this->authorize('view production');
-        \Log::info('Authorization passed');
-    } catch (\Exception $e) {
-        \Log::error('Authorization failed', [
-            'error' => $e->getMessage(),
-            'user_permissions' => $user->getAllPermissions()->pluck('name')->toArray(),
-        ]);
-        throw $e;
-    }
-
-    // Check branch access permissions
+    // Check branch and company access...
     if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
-        \Log::error('Branch access denied', [
-            'user_branch_id' => $user->branch_id,
-            'print_job_branch_id' => $printJob->branch_id,
-        ]);
         abort(403, 'You cannot view print jobs from other branches.');
     }
 
-    // Check if print job belongs to user's company
-    if (isset($printJob->company_id) && $printJob->company_id !== $user->company_id) {
-        \Log::error('Company access denied', [
-            'user_company_id' => $user->company_id,
-            'print_job_company_id' => $printJob->company_id,
-        ]);
-        abort(403, 'You cannot view print jobs from other companies.');
-    }
-
-    \Log::info('All access checks passed, loading relationships');
-
-    // Load relationships
+    // Load relationships explicitly
     $printJob->load([
         'invoice.customer',
         'invoice.items.product',
@@ -307,13 +264,92 @@ public function show(int $id): Response
         }
     ]);
 
-    // Get production staff for reassignment
+    // Get production staff
     $productionStaff = $this->getProductionStaff($printJob->branch_id);
 
-    \Log::info('Rendering show page');
+    // **EXPLICIT DATA PREPARATION**
+    $printJobData = [
+        'id' => $printJob->id,
+        'job_number' => $printJob->job_number,
+        'job_type' => $printJob->job_type,
+        'job_title' => $printJob->job_title,
+        'job_description' => $printJob->job_description,
+        'production_status' => $printJob->production_status,
+        'priority' => $printJob->priority,
+        'estimated_completion' => $printJob->estimated_completion,
+        'actual_completion' => $printJob->actual_completion,
+        'estimated_cost' => $printJob->estimated_cost,
+        'actual_cost' => $printJob->actual_cost,
+        'completion_percentage' => $printJob->completion_percentage,
+        'production_notes' => $printJob->production_notes,
+        'customer_instructions' => $printJob->customer_instructions,
+        'special_instructions' => $printJob->special_instructions,
+        'specifications' => $printJob->specifications,
+        'created_at' => $printJob->created_at,
+        'updated_at' => $printJob->updated_at,
+        
+        // Relationships
+        'invoice' => $printJob->invoice ? [
+            'id' => $printJob->invoice->id,
+            'invoice_number' => $printJob->invoice->invoice_number,
+            'customer' => $printJob->invoice->customer ? [
+                'id' => $printJob->invoice->customer->id,
+                'name' => $printJob->invoice->customer->name,
+                'email' => $printJob->invoice->customer->email,
+                'phone' => $printJob->invoice->customer->phone,
+            ] : null,
+            'items' => $printJob->invoice->items->map(function($item) {
+                return [
+                    'id' => $item->id,
+                    'item_description' => $item->item_description,
+                    'quantity' => $item->quantity,
+                    'unit_price' => $item->unit_price,
+                    'line_total' => $item->line_total,
+                    'product' => $item->product ? [
+                        'id' => $item->product->id,
+                        'name' => $item->product->name,
+                    ] : null,
+                ];
+            })->toArray(),
+        ] : null,
+        
+        'branch' => $printJob->branch ? [
+            'id' => $printJob->branch->id,
+            'name' => $printJob->branch->name,
+            'code' => $printJob->branch->code,
+        ] : null,
+        
+        'assignedTo' => $printJob->assignedTo ? [
+            'id' => $printJob->assignedTo->id,
+            'name' => $printJob->assignedTo->name,
+            'email' => $printJob->assignedTo->email,
+        ] : null,
+        
+        // **EXPLICIT PRODUCTION STAGES**
+        'productionStages' => $printJob->productionStages->map(function($stage) {
+            return [
+                'id' => $stage->id,
+                'stage_name' => $stage->stage_name,
+                'stage_status' => $stage->stage_status,
+                'started_at' => $stage->started_at,
+                'completed_at' => $stage->completed_at,
+                'estimated_duration' => $stage->estimated_duration,
+                'actual_duration' => $stage->actual_duration,
+                'stage_order' => $stage->stage_order,
+                'notes' => $stage->notes,
+                'requires_customer_approval' => $stage->requires_customer_approval,
+            ];
+        })->toArray(),
+    ];
+
+    \Log::info('Final data being sent to frontend', [
+        'print_job_id' => $printJobData['id'],
+        'production_stages_count' => count($printJobData['productionStages']),
+        'production_stages' => $printJobData['productionStages'],
+    ]);
 
     return Inertia::render('Production/PrintJobs/Show', [
-        'printJob' => $printJob,
+        'printJob' => $printJobData,
         'productionStaff' => $productionStaff,
         'permissions' => [
             'edit' => $user->can('manage production'),
@@ -543,39 +579,50 @@ public function show(int $id): Response
     /**
      * Start production for a print job
      */
-    public function startProduction(int $id): RedirectResponse
-    {
-        try {
-            $printJob = $this->printJobRepository->findOrFail($id);
-            
-            $this->authorize('manage production');
+    /**
+ * Start production for a print job
+ */
+public function startProduction(int $id): RedirectResponse
+{
+    try {
+        $printJob = $this->printJobRepository->findOrFail($id);
+        
+        $this->authorize('manage production');
 
-            // Check access permissions
-            $user = auth()->user();
-            if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
-                abort(403, 'You cannot manage production for jobs from other branches.');
-            }
+        // Check access permissions
+        $user = auth()->user();
+        if (!$user->can('view all branches') && $user->branch_id !== $printJob->branch_id) {
+            abort(403, 'You cannot manage production for jobs from other branches.');
+        }
 
-            // Update status to start production
-            $this->printJobRepository->update($id, [
-                'production_status' => 'in_progress',
-                'started_at' => now()
-            ]);
+        // Check if production can be started
+        if ($printJob->production_status !== 'pending') {
+            return back()->withErrors(['error' => 'Production has already been started or completed.']);
+        }
+       
+        // Use PrintJobService to start production with stages workflow
+        $success = $this->printJobService->startProduction($printJob);
 
+        if ($success) {
             return redirect()
                 ->route('production.print-jobs.show', $id)
-                ->with('success', 'Production started successfully');
-
-        } catch (\Exception $e) {
-            \Log::error('Start production failed', [
-                'print_job_id' => $id,
-                'user_id' => auth()->id(),
-                'error' => $e->getMessage(),
-            ]);
-
-            return back()->withErrors(['error' => 'Failed to start production. Please try again.']);
+                ->with('success', 'Production started successfully. First stage is now ready.');
+        } else {
+            return back()->withErrors(['error' => 'Failed to start production.']);
         }
+
+    } catch (\Exception $e) {
+        \Log::error('Start production failed', [
+            'print_job_id' => $id,
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return back()->withErrors(['error' => 'Failed to start production. Please try again.']);
     }
+}
+
 
     /**
      * Assign staff to print job
