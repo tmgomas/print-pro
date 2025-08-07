@@ -228,7 +228,12 @@ class CustomerService extends BaseService
                 'customer_since' => $customer->created_at->format('Y-m-d'),
                 'days_as_customer' => $customer->created_at->diffInDays(now()),
                 'last_invoice_date' => $customer->invoices->max('created_at')?->format('Y-m-d'),
-                'last_payment_date' => $customer->payments()->where('status', 'completed')->max('created_at')?->format('Y-m-d'),
+                'last_payment_date' => $customer->payments()
+    ->where('status', 'completed')
+    ->latest('created_at')
+    ->first()
+    ?->created_at
+    ?->format('Y-m-d'),
             ],
             'risk_assessment' => [
                 'risk_level' => $this->calculateRiskLevel($customer, $outstandingBalance, $creditUtilization, $overdueInvoices),
