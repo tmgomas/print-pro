@@ -321,7 +321,7 @@ class InvoiceService extends BaseService
     }
 
     /**
-     * Get invoice statistics
+     * Get invoice statistics - delegated to repository
      */
     public function getInvoiceStats(int $companyId, ?int $branchId = null): array
     {
@@ -329,7 +329,23 @@ class InvoiceService extends BaseService
     }
 
     /**
-     * Get overdue invoices
+     * Get daily income report - delegated to repository
+     */
+    public function getDailyIncomeReport(int $companyId, Carbon $startDate, Carbon $endDate, ?int $branchId = null): array
+    {
+        return $this->repository->getDailyIncomeReport($companyId, $startDate, $endDate, $branchId);
+    }
+
+    /**
+     * Get weekly income summary - delegated to repository
+     */
+    public function getWeeklyIncomeSummary(int $companyId, ?int $branchId = null): array
+    {
+        return $this->repository->getWeeklyIncomeSummary($companyId, $branchId);
+    }
+
+    /**
+     * Get overdue invoices - delegated to repository
      */
     public function getOverdueInvoices(int $companyId, ?int $branchId = null): \Illuminate\Database\Eloquent\Collection
     {
@@ -374,5 +390,163 @@ class InvoiceService extends BaseService
             $this->handleException($e, 'invoice duplication');
             throw $e;
         }
+    }
+
+    /**
+     * Business rule: Validate invoice creation data
+     */
+    public function validateInvoiceCreation(array $data, int $companyId): array
+    {
+        $errors = [];
+
+        // Check customer credit limit
+        if (!empty($data['customer_id'])) {
+            $customer = $this->customerRepository->find($data['customer_id']);
+            if ($customer && isset($data['total_amount'])) {
+                $availableCredit = $customer->credit_limit - $customer->current_balance;
+                if ($data['total_amount'] > $availableCredit) {
+                    $errors[] = "Invoice amount exceeds customer's available credit limit.";
+                }
+            }
+        }
+
+        // Check branch operational status
+        if (!empty($data['branch_id'])) {
+            $branch = $this->branchRepository->find($data['branch_id']);
+            if ($branch && $branch->status !== 'active') {
+                $errors[] = "Cannot create invoice for inactive branch.";
+            }
+        }
+
+        // Validate items stock availability (if product has inventory tracking)
+        if (!empty($data['items'])) {
+            foreach ($data['items'] as $item) {
+                $product = $this->productRepository->find($item['product_id']);
+                if ($product && isset($product->stock_quantity)) {
+                    if ($item['quantity'] > $product->stock_quantity) {
+                        $errors[] = "Insufficient stock for product: {$product->name}";
+                    }
+                }
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Business rule: Calculate invoice analytics
+     */
+    public function calculateInvoiceAnalytics(int $invoiceId): array
+    {
+        $invoice = $this->repository->findWithDetails($invoiceId);
+        
+        if (!$invoice) {
+            throw new \Exception('Invoice not found.');
+        }
+
+        // Calculate profitability metrics
+        $totalCost = $invoice->items->sum(function ($item) {
+            return $item->quantity * ($item->product->cost_price ?? 0);
+        });
+
+        $grossProfit = $invoice->subtotal - $totalCost;
+        $profitMargin = $invoice->subtotal > 0 ? ($grossProfit / $invoice->subtotal) * 100 : 0;
+
+        // Calculate delivery efficiency
+        $deliveryDays = $invoice->deliveries->count() > 0 
+            ? $invoice->created_at->diffInDays($invoice->deliveries->first()->delivered_at)
+            : null;
+
+        return [
+            'financial' => [
+                'total_cost' => $totalCost,
+                'gross_profit' => $grossProfit,
+                'profit_margin' => round($profitMargin, 2),
+                'weight_to_value_ratio' => $invoice->total_amount > 0 
+                    ? $invoice->total_weight / $invoice->total_amount 
+                    : 0,
+            ],
+            'operational' => [
+                'items_count' => $invoice->items->count(),
+                'average_item_value' => $invoice->items->count() > 0 
+                    ? $invoice->subtotal / $invoice->items->count() 
+                    : 0,
+                'delivery_days' => $deliveryDays,
+                'payment_terms_days' => $invoice->created_at->diffInDays($invoice->due_date),
+            ],
+            'customer' => [
+                'customer_value_score' => $this->calculateCustomerValueScore($invoice->customer_id),
+                'repeat_customer' => $this->repository->getByCustomer($invoice->customer_id, 2)->count() > 1,
+            ],
+        ];
+    }
+
+    /**
+     * Helper: Calculate customer value score
+     */
+    private function calculateCustomerValueScore(int $customerId): float
+    {
+        $customerInvoices = $this->repository->getByCustomer($customerId, 12); // Last 12 invoices
+        
+        if ($customerInvoices->isEmpty()) {
+            return 0;
+        }
+
+        $totalValue = $customerInvoices->sum('total_amount');
+        $averageValue = $totalValue / $customerInvoices->count();
+        $frequency = $customerInvoices->count();
+        $recency = $customerInvoices->first()->created_at->diffInDays(now());
+
+        // Simple scoring algorithm (can be enhanced)
+        $valueScore = min($averageValue / 10000, 10); // Max 10 points for high-value orders
+        $frequencyScore = min($frequency / 2, 10); // Max 10 points for frequent orders
+        $recencyScore = max(10 - ($recency / 30), 0); // Lose points for old last order
+
+        return round(($valueScore + $frequencyScore + $recencyScore) / 3, 2);
+    }
+
+    /**
+     * Business rule: Auto-generate recommendations
+     */
+    public function generateInvoiceRecommendations(int $customerId, array $orderData = []): array
+    {
+        $recommendations = [];
+
+        // Get customer's order history
+        $customerInvoices = $this->repository->getByCustomer($customerId, 10);
+        
+        if ($customerInvoices->isNotEmpty()) {
+            // Recommend frequently ordered products
+            $frequentProducts = $customerInvoices->flatMap->items
+                ->groupBy('product_id')
+                ->map->count()
+                ->sortDesc()
+                ->take(5);
+
+            $recommendations['frequent_products'] = $frequentProducts->keys()->map(function ($productId) {
+                return $this->productRepository->find($productId);
+            })->filter();
+
+            // Recommend optimal quantities based on history
+            $recommendations['optimal_quantities'] = $frequentProducts->map(function ($count, $productId) use ($customerInvoices) {
+                $averageQuantity = $customerInvoices->flatMap->items
+                    ->where('product_id', $productId)
+                    ->avg('quantity');
+                
+                return [
+                    'product_id' => $productId,
+                    'recommended_quantity' => ceil($averageQuantity),
+                ];
+            });
+
+            // Recommend best delivery schedule
+            $averageDeliveryDays = $customerInvoices->avg(function ($invoice) {
+                return $invoice->created_at->diffInDays($invoice->due_date);
+            });
+
+            $recommendations['suggested_due_date'] = now()->addDays(ceil($averageDeliveryDays));
+        }
+
+        return $recommendations;
     }
 }

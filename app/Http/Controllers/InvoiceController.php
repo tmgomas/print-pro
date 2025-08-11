@@ -63,7 +63,7 @@ class InvoiceController extends Controller
         $customers = $this->customerRepository->getForDropdown($companyId);
         $branches = $this->branchRepository->getForDropdown($companyId);
         $stats = $this->invoiceService->getInvoiceStats($companyId, $filters['branch_id']);
-
+        // dd  ($stats);
         return Inertia::render('Invoices/Index', [
             'invoices' => [
                 'data' => $invoices->items(),
@@ -73,6 +73,8 @@ class InvoiceController extends Controller
                 'total' => $invoices->total(),
                 'from' => $invoices->firstItem(),
                 'to' => $invoices->lastItem(),
+                'paid_count' => $stats['paid_count'] ?? 0,
+                'pending_count' => $stats['pending_count'] ?? 0,
             ],
             'filters' => $filters,
             'customers' => $customers,
