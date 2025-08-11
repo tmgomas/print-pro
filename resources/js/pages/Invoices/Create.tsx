@@ -6,13 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -33,7 +26,11 @@ import {
     AlertCircle,
     Info,
     Eye,
-    Settings
+    Settings,
+    Search,
+    X,
+    ChevronDown,
+    Check
 } from 'lucide-react';
 import { BreadcrumbItem } from '@/types';
 
@@ -87,6 +84,160 @@ interface Props {
     error?: string;
 }
 
+// Generic Searchable Select Component
+interface SearchableSelectProps<T> {
+    options: T[];
+    value: string;
+    onValueChange: (value: string) => void;
+    placeholder?: string;
+    getLabel: (option: T) => string;
+    getValue: (option: T) => string;
+    getSearchText?: (option: T) => string;
+    renderOption?: (option: T) => React.ReactNode;
+    disabled?: boolean;
+    className?: string;
+}
+
+function SearchableSelect<T>({ 
+    options, 
+    value, 
+    onValueChange, 
+    placeholder = "Search and select...",
+    getLabel,
+    getValue,
+    getSearchText,
+    renderOption,
+    disabled = false,
+    className = ""
+}: SearchableSelectProps<T>) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filteredOptions, setFilteredOptions] = useState<T[]>(options);
+
+    // Get selected option for display
+    const selectedOption = options.find(option => getValue(option) === value);
+
+    // Filter options based on search term
+    useEffect(() => {
+        if (!searchTerm.trim()) {
+            setFilteredOptions(options);
+        } else {
+            const filtered = options.filter(option => {
+                const label = getLabel(option)?.toLowerCase() || '';
+                const searchText = getSearchText ? getSearchText(option)?.toLowerCase() || '' : '';
+                const searchValue = getValue(option)?.toLowerCase() || '';
+                
+                return label.includes(searchTerm.toLowerCase()) ||
+                       searchText.includes(searchTerm.toLowerCase()) ||
+                       searchValue.includes(searchTerm.toLowerCase());
+            });
+            setFilteredOptions(filtered);
+        }
+    }, [searchTerm, options, getLabel, getSearchText, getValue]);
+
+    const handleSelect = (optionValue: string) => {
+        onValueChange(optionValue);
+        setIsOpen(false);
+        setSearchTerm('');
+    };
+
+    const clearSelection = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onValueChange('');
+        setSearchTerm('');
+    };
+
+    if (disabled) {
+        return (
+            <div className={`flex h-10 w-full items-center justify-between rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground ${className}`}>
+                <span>{selectedOption ? getLabel(selectedOption) : placeholder}</span>
+                <ChevronDown className="h-4 w-4" />
+            </div>
+        );
+    }
+
+    return (
+        <div className={`relative ${className}`}>
+            {/* Trigger Button */}
+            <div
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                onClick={() => setIsOpen(!isOpen)}
+            >
+                <span className={selectedOption ? "text-foreground" : "text-muted-foreground"}>
+                    {selectedOption ? getLabel(selectedOption) : placeholder}
+                </span>
+                <div className="flex items-center gap-2">
+                    {selectedOption && (
+                        <X 
+                            className="h-4 w-4 text-muted-foreground hover:text-foreground" 
+                            onClick={clearSelection}
+                        />
+                    )}
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                </div>
+            </div>
+
+            {/* Dropdown Content */}
+            {isOpen && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-popover border rounded-md shadow-lg">
+                    {/* Search Input */}
+                    <div className="p-2 border-b">
+                        <div className="relative">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-8"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+
+                    {/* Options List */}
+                    <div className="max-h-60 overflow-y-auto">
+                        {filteredOptions.length > 0 ? (
+                            filteredOptions.map((option, index) => {
+                                const optionValue = getValue(option);
+                                const isSelected = optionValue === value;
+                                
+                                return (
+                                    <div
+                                        key={index}
+                                        className={`flex items-center justify-between p-3 hover:bg-accent cursor-pointer border-b last:border-b-0 ${isSelected ? 'bg-accent' : ''}`}
+                                        onClick={() => handleSelect(optionValue)}
+                                    >
+                                        <div className="flex-1">
+                                            {renderOption ? renderOption(option) : (
+                                                <div className="font-medium">{getLabel(option)}</div>
+                                            )}
+                                        </div>
+                                        {isSelected && (
+                                            <Check className="h-4 w-4 text-primary" />
+                                        )}
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="p-3 text-center text-muted-foreground">
+                                No options found matching "{searchTerm}"
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Overlay to close dropdown */}
+            {isOpen && (
+                <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setIsOpen(false)}
+                />
+            )}
+        </div>
+    );
+}
+
 // Weight pricing calculation (based on documentation)
 const calculateWeightCharge = (totalWeight: number): number => {
     if (totalWeight <= 1) return 200;
@@ -134,6 +285,14 @@ export default function CreateInvoice({
         { title: 'Dashboard', href: '/dashboard' },
         { title: 'Invoices', href: '/invoices' },
         { title: 'Create Invoice', href: '/invoices/create' },
+    ];
+
+    // Status options
+    const statusOptions = [
+        { value: 'draft', label: 'Draft', description: 'Work in progress' },
+        { value: 'pending', label: 'Pending', description: 'Awaiting approval' },
+        { value: 'processing', label: 'Processing', description: 'Being processed' },
+        { value: 'completed', label: 'Completed', description: 'Finished' }
     ];
 
     // Initialize with pre-selected customer
@@ -204,77 +363,77 @@ export default function CreateInvoice({
         console.log('Removed item, remaining items:', filteredItems.length);
     };
 
-const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
-    const updatedItems = items.map(item => {
-        if (item.id === id) {
-            const updatedItem = { ...item, [field]: value };
-            
-            // Auto-fill product details when product is selected
-            if (field === 'product_id' && value) {
-                const product = products.find(p => p.value === parseInt(value.toString()));
-                if (product) {
-                    updatedItem.item_description = product.name;
-                    updatedItem.unit_price = product.base_price.toString();
-                    
-                    // 🔥 FIX: Convert weight to kg based on weight_unit
-                    let weightInKg = product.weight_per_unit;
-                    if (product.weight_unit === 'grams' || product.weight_unit === 'g') {
-                        weightInKg = product.weight_per_unit / 1000; // Convert grams to kg
-                    } else if (product.weight_unit === 'lb') {
-                        weightInKg = product.weight_per_unit * 0.453592; // Convert pounds to kg
-                    } else if (product.weight_unit === 'oz') {
-                        weightInKg = product.weight_per_unit * 0.0283495; // Convert ounces to kg
-                    }
-                    // If already in kg, no conversion needed
-                    
-                    updatedItem.unit_weight = weightInKg.toString();
-                    
-                    console.log(`Weight Conversion: ${product.weight_per_unit} ${product.weight_unit} → ${weightInKg} kg`);
-                }
-            }
-            
-            // Recalculate line totals
-            if (field === 'quantity' || field === 'unit_price') {
-                const quantity = parseFloat(updatedItem.quantity) || 0;
-                const unitPrice = parseFloat(updatedItem.unit_price) || 0;
-                updatedItem.line_total = quantity * unitPrice;
+    const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
+        const updatedItems = items.map(item => {
+            if (item.id === id) {
+                const updatedItem = { ...item, [field]: value };
                 
-                // Calculate tax
-                if (updatedItem.product_id) {
-                    const product = products.find(p => p.value === parseInt(updatedItem.product_id.toString()));
+                // Auto-fill product details when product is selected
+                if (field === 'product_id' && value) {
+                    const product = products.find(p => p.value === parseInt(value.toString()));
                     if (product) {
-                        updatedItem.tax_amount = updatedItem.line_total * (product.tax_rate / 100);
+                        updatedItem.item_description = product.name;
+                        updatedItem.unit_price = (parseFloat(product.base_price?.toString()) || 0).toString();
+                        
+                        // Convert weight to kg based on weight_unit
+                        let weightInKg = parseFloat(product.weight_per_unit?.toString()) || 0;
+                        if (product.weight_unit === 'grams' || product.weight_unit === 'g') {
+                            weightInKg = weightInKg / 1000; // Convert grams to kg
+                        } else if (product.weight_unit === 'lb') {
+                            weightInKg = weightInKg * 0.453592; // Convert pounds to kg
+                        } else if (product.weight_unit === 'oz') {
+                            weightInKg = weightInKg * 0.0283495; // Convert ounces to kg
+                        }
+                        
+                        updatedItem.unit_weight = weightInKg.toString();
+                        
+                        console.log(`Weight Conversion: ${product.weight_per_unit} ${product.weight_unit} → ${weightInKg} kg`);
                     }
                 }
+                
+                // Recalculate line totals
+                if (field === 'quantity' || field === 'unit_price') {
+                    const quantity = parseFloat(updatedItem.quantity) || 0;
+                    const unitPrice = parseFloat(updatedItem.unit_price) || 0;
+                    updatedItem.line_total = quantity * unitPrice;
+                    
+                    // Calculate tax
+                    if (updatedItem.product_id) {
+                        const product = products.find(p => p.value === parseInt(updatedItem.product_id.toString()));
+                        if (product) {
+                            const taxRate = parseFloat(product.tax_rate?.toString()) || 0;
+                            updatedItem.tax_amount = updatedItem.line_total * (taxRate / 100);
+                        }
+                    }
+                }
+                
+                if (field === 'quantity' || field === 'unit_weight') {
+                    const quantity = parseFloat(updatedItem.quantity) || 0;
+                    const unitWeight = parseFloat(updatedItem.unit_weight) || 0;
+                    updatedItem.line_weight = quantity * unitWeight;
+                }
+                
+                return updatedItem;
             }
-            
-            if (field === 'quantity' || field === 'unit_weight') {
-                const quantity = parseFloat(updatedItem.quantity) || 0;
-                const unitWeight = parseFloat(updatedItem.unit_weight) || 0;
-                updatedItem.line_weight = quantity * unitWeight;
-            }
-            
-            return updatedItem;
-        }
-        return item;
-    });
-    
-    setItems(updatedItems);
-    
-    // Update form data
-    setData('items', updatedItems.map(item => ({
-        product_id: item.product_id,
-        item_description: item.item_description,
-        quantity: parseFloat(item.quantity) || 0,
-        unit_price: parseFloat(item.unit_price) || 0,
-        unit_weight: parseFloat(item.unit_weight) || 0,
-        specifications: item.specifications ? 
-            (typeof item.specifications === 'string' ? 
-                { notes: item.specifications } : 
-                item.specifications
-            ) : {}
-    })));
-};
+            return item;
+        });
+        
+        setItems(updatedItems);
+        
+        // Update form data
+        setData('items', updatedItems.map(item => ({
+            product_id: item.product_id,
+            item_description: item.item_description,
+            quantity: parseFloat(item.quantity) || 0,
+            unit_price: parseFloat(item.unit_price) || 0,
+            unit_weight: parseFloat(item.unit_weight) || 0,
+            specifications: item.specifications ? 
+                (typeof item.specifications === 'string' ? 
+                    { notes: item.specifications } : 
+                    item.specifications
+                ) : {}
+        })));
+    };
 
     // Calculate invoice totals
     const calculateTotals = (currentItems: InvoiceItem[]) => {
@@ -369,7 +528,7 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
         console.log('Submitting invoice data:', formData);
 
         post('/invoices', {
-           Data: formData,
+            data: formData,
             onSuccess: () => {
                 console.log('Invoice created successfully');
             },
@@ -386,6 +545,7 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
         console.log('Items length:', items.length);
         console.log('Form items length:', data.items.length);
         console.log('Invoice totals:', invoiceTotals);
+        console.log('Products sample:', products.slice(0, 2));
     };
 
     return (
@@ -414,20 +574,7 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                 )}
 
                 {/* Debug Info (remove in production) */}
-                <div className="mb-4 p-4 bg-gray-100 rounded">
-                    <p><strong>Debug Info:</strong></p>
-                    <p>Items in state: {items.length}</p>
-                    <p>Items in form: {data.items.length}</p>
-                    <p>Customers loaded: {customers.length}</p>
-                    <p>Products loaded: {products.length}</p>
-                    <button 
-                        type="button" 
-                        onClick={debugCurrentState}
-                        className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                    >
-                        Log State
-                    </button>
-                </div>
+                
 
                 {/* Header */}
                 <div className="flex items-center justify-between">
@@ -462,68 +609,70 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                                 {/* Customer Selection */}
                                 <div className="space-y-2">
                                     <Label htmlFor="customer">Customer *</Label>
-                                    <Select 
-                                        value={data.customer_id.toString()} 
+                                    <SearchableSelect
+                                        options={customers}
+                                        value={data.customer_id.toString()}
                                         onValueChange={handleCustomerChange}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select customer" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {customers && customers.length > 0 ? 
-                                                customers.map((customer) => (
-                                                    <SelectItem key={customer.value} value={customer.value.toString()}>
-                                                        {customer.label}
-                                                    </SelectItem>
-                                                )) : 
-                                                <SelectItem value="" disabled>No customers available</SelectItem>
-                                            }
-                                        </SelectContent>
-                                    </Select>
+                                        placeholder="Search and select customer..."
+                                        getLabel={(customer) => customer.label}
+                                        getValue={(customer) => customer.value.toString()}
+                                        getSearchText={(customer) => `${customer.display_name} ${customer.phone || ''} ${customer.email || ''}`}
+                                        renderOption={(customer) => (
+                                            <div>
+                                                <div className="font-medium">{customer.display_name}</div>
+                                                <div className="text-sm text-muted-foreground">
+                                                    Credit: Rs. {customer.credit_limit.toLocaleString()} • 
+                                                    Balance: Rs. {customer.current_balance.toLocaleString()}
+                                                    {customer.phone && ` • ${customer.phone}`}
+                                                </div>
+                                            </div>
+                                        )}
+                                    />
                                     <InputError message={errors.customer_id} />
                                 </div>
 
                                 {/* Branch Selection */}
                                 <div className="space-y-2">
                                     <Label htmlFor="branch">Branch *</Label>
-                                    <Select 
-                                        value={data.branch_id.toString()} 
+                                    <SearchableSelect
+                                        options={branches}
+                                        value={data.branch_id.toString()}
                                         onValueChange={(value) => setData('branch_id', parseInt(value))}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select branch" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {branches && branches.length > 0 ? 
-                                                branches.map((branch) => (
-                                                    <SelectItem key={branch.value} value={branch.value.toString()}>
-                                                        {branch.label}
-                                                    </SelectItem>
-                                                )) : 
-                                                <SelectItem value="" disabled>No branches available</SelectItem>
-                                            }
-                                        </SelectContent>
-                                    </Select>
+                                        placeholder="Search and select branch..."
+                                        getLabel={(branch) => branch.label}
+                                        getValue={(branch) => branch.value.toString()}
+                                        getSearchText={(branch) => `${branch.name} ${branch.code}`}
+                                        renderOption={(branch) => (
+                                            <div>
+                                                <div className="font-medium">{branch.name}</div>
+                                                <div className="text-sm text-muted-foreground">
+                                                    Code: {branch.code}
+                                                </div>
+                                            </div>
+                                        )}
+                                    />
                                     <InputError message={errors.branch_id} />
                                 </div>
 
                                 {/* Status */}
                                 <div className="space-y-2">
                                     <Label htmlFor="status">Status</Label>
-                                    <Select 
-                                        value={data.status} 
+                                    <SearchableSelect
+                                        options={statusOptions}
+                                        value={data.status}
                                         onValueChange={(value) => setData('status', value)}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="draft">Draft</SelectItem>
-                                            <SelectItem value="pending">Pending</SelectItem>
-                                            <SelectItem value="processing">Processing</SelectItem>
-                                            <SelectItem value="completed">Completed</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                        placeholder="Select status..."
+                                        getLabel={(status) => status.label}
+                                        getValue={(status) => status.value}
+                                        renderOption={(status) => (
+                                            <div>
+                                                <div className="font-medium">{status.label}</div>
+                                                <div className="text-sm text-muted-foreground">
+                                                    {status.description}
+                                                </div>
+                                            </div>
+                                        )}
+                                    />
                                 </div>
 
                                 {/* Invoice Date */}
@@ -593,7 +742,7 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                                 </div>
                                 <Button type="button" onClick={addItem} size="sm">
                                     <Plus className="mr-2 h-4 w-4" />
-                                    Add
+                                    Add Item
                                 </Button>
                             </div>
                         </CardHeader>
@@ -620,27 +769,31 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                                             </div>
                                             
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-                                                {/* Product Selection */}
+                                                {/* Product Selection - Now with Search */}
                                                 <div className="lg:col-span-2 space-y-2">
                                                     <Label>Product *</Label>
-                                                    <Select 
-                                                        value={item.product_id.toString()} 
+                                                    <SearchableSelect
+                                                        options={products}
+                                                        value={item.product_id.toString()}
                                                         onValueChange={(value) => updateItem(item.id, 'product_id', parseInt(value))}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Select product" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {products && products.length > 0 ?
-                                                                products.map((product) => (
-                                                                    <SelectItem key={product.value} value={product.value.toString()}>
-                                                                        {product.label}
-                                                                    </SelectItem>
-                                                                )) :
-                                                                <SelectItem value="" disabled>No products available</SelectItem>
-                                                            }
-                                                        </SelectContent>
-                                                    </Select>
+                                                        placeholder="Search and select product..."
+                                                        getLabel={(product) => product.label}
+                                                        getValue={(product) => product.value.toString()}
+                                                        getSearchText={(product) => `${product.name} ${product.label} ${product.unit_type || ''}`}
+                                                        renderOption={(product) => (
+                                                            <div>
+                                                                <div className="font-medium">{product.name}</div>
+                                                                <div className="text-sm text-muted-foreground">
+                                                                    Rs. {(parseFloat(product.base_price?.toString()) || 0).toFixed(2)} • 
+                                                                    {product.weight_per_unit} {product.weight_unit} • 
+                                                                    Tax: {product.tax_rate}%
+                                                                </div>
+                                                                <div className="text-xs text-muted-foreground">
+                                                                    ID: #{product.value} • Type: {product.unit_type}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    />
                                                 </div>
 
                                                 {/* Quantity */}
@@ -692,7 +845,7 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                                             </div>
 
                                             {/* Description */}
-                                            <div className="space-y-2">
+                                            {/* <div className="space-y-2">
                                                 <Label>Description</Label>
                                                 <Textarea
                                                     value={item.item_description}
@@ -700,14 +853,25 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                                                     placeholder="Item description..."
                                                     rows={2}
                                                 />
-                                            </div>
+                                            </div> */}
+
+                                            {/* Specifications */}
+                                            {/* <div className="space-y-2">
+                                                <Label>Specifications</Label>
+                                                <Textarea
+                                                    value={typeof item.specifications === 'string' ? item.specifications : ''}
+                                                    onChange={(e) => updateItem(item.id, 'specifications', e.target.value)}
+                                                    placeholder="Additional specifications or notes..."
+                                                    rows={2}
+                                                />
+                                            </div> */}
 
                                             {/* Item Summary */}
-                                            <div className="flex items-center justify-between text-sm text-muted-foreground">
-                                                <span>Line Weight: {item.line_weight.toFixed(2)} kg</span>
-                                                <span>Tax Amount: Rs. {item.tax_amount.toFixed(2)}</span>
-                                                <span>Total: Rs. {item.line_total.toFixed(2)}</span>
-                                            </div>
+                                            {/* <div className="flex items-center justify-between text-sm text-muted-foreground bg-muted/50 p-3 rounded">
+                                                <span>Line Weight: <strong>{item.line_weight.toFixed(2)} kg</strong></span>
+                                                <span>Tax Amount: <strong>Rs. {item.tax_amount.toFixed(2)}</strong></span>
+                                                <span>Line Total: <strong>Rs. {item.line_total.toFixed(2)}</strong></span>
+                                            </div> */}
                                         </div>
                                     ))}
                                 </div>
@@ -761,7 +925,7 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                                <div className="space-y-2">
+                                <div className="space-y-3">
                                     <div className="flex justify-between">
                                         <span>Subtotal:</span>
                                         <span>Rs. {invoiceTotals.subtotal.toFixed(2)}</span>
@@ -788,6 +952,31 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                                     <div className="flex justify-between text-lg font-semibold">
                                         <span>Total Amount:</span>
                                         <span>Rs. {invoiceTotals.total.toFixed(2)}</span>
+                                    </div>
+                                </div>
+
+                                {/* Quick Actions */}
+                                <div className="pt-4 border-t">
+                                    <div className="text-sm text-muted-foreground mb-2">Quick Actions:</div>
+                                    <div className="flex gap-2">
+                                        <Button 
+                                            type="button" 
+                                            variant="outline" 
+                                            size="sm"
+                                            onClick={addItem}
+                                        >
+                                            <Plus className="h-3 w-3 mr-1" />
+                                            Add Item
+                                        </Button>
+                                        <Button 
+                                            type="button" 
+                                            variant="outline" 
+                                            size="sm"
+                                            onClick={debugCurrentState}
+                                        >
+                                            <Settings className="h-3 w-3 mr-1" />
+                                            Debug
+                                        </Button>
                                     </div>
                                 </div>
                             </CardContent>
