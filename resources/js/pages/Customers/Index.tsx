@@ -205,13 +205,14 @@ export default function CustomersIndex({ customers, branches = [], stats, filter
                     <div>
                         <h1 className="text-3xl font-bold">Customer Management</h1>
                         <p className="text-muted-foreground">
-                            Manage your customer database and relationships
+                            Manage your customer database and and  relationships
                         </p>
                     </div>
                     <Button asChild>
                         <Link href="/customers/create">
                             <UserPlus className="h-4 w-4 mr-2" />
                             Add Customer
+                    
                         </Link>
                     </Button>
                 </div>

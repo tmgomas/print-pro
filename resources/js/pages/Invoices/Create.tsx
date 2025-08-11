@@ -369,7 +369,7 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
         console.log('Submitting invoice data:', formData);
 
         post('/invoices', {
-            data: formData,
+           Data: formData,
             onSuccess: () => {
                 console.log('Invoice created successfully');
             },
@@ -593,7 +593,7 @@ const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
                                 </div>
                                 <Button type="button" onClick={addItem} size="sm">
                                     <Plus className="mr-2 h-4 w-4" />
-                                    Add Item
+                                    Add
                                 </Button>
                             </div>
                         </CardHeader>

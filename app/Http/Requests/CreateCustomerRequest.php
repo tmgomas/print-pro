@@ -54,7 +54,7 @@ class CreateCustomerRequest extends FormRequest
             ],
             'email' => [
                 'nullable',
-                'email:rfc,dns',
+                'email',
                 'max:255',
                 Rule::unique('customers', 'email'),
                 'lowercase',
@@ -235,7 +235,7 @@ class CreateCustomerRequest extends FormRequest
                 ],
                 'contact_person_email' => [
                     'nullable',
-                    'email:rfc,dns',
+                    'email',
                     'max:255',
                     'lowercase',
                 ],
