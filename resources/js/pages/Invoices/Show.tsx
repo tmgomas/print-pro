@@ -33,7 +33,9 @@ import {
     Factory,
     PlayCircle,
     Settings,
-    Upload
+    Upload,
+    XCircle,
+    Info
 } from 'lucide-react';
 
 interface Invoice {
@@ -439,19 +441,63 @@ export default function InvoiceShow({
     // Check if invoice is ready for print job creation
     const canCreatePrintJob = () => {
         console.log('=== PRINT JOB CREATION CHECK ===');
-        console.log('Payment Status:', invoice.payment_status);
-        console.log('Remaining Balance:', paymentData.remaining_balance);
+        console.log('Invoice Status:', invoice.status);
         console.log('Existing Print Job:', printJob);
         console.log('Create Permission:', permissions.create_print_job);
         
-        // Invoice must be fully paid (no remaining balance) and no existing print job
-        const isPaid = invoice.payment_status === 'paid' || paymentData.remaining_balance <= 0;
-        const noExistingJob = !printJob;
+        // Can create print job if:
+        // 1. Has permission to create print jobs
+        // 2. No existing print job for this invoice
+        // 3. Invoice has any valid status (including draft)
         const hasPermission = permissions.create_print_job;
+        const noExistingJob = !printJob;
         
-        console.log('Can Create:', isPaid && noExistingJob && hasPermission);
+        console.log('Has Permission:', hasPermission);
+        console.log('No Existing Job:', noExistingJob);
+        console.log('Can Create:', hasPermission && noExistingJob);
         
-        return isPaid && noExistingJob && hasPermission;
+        return hasPermission && noExistingJob;
+    };
+
+    // Get print job creation status message
+    const getPrintJobStatusMessage = () => {
+        if (!permissions.create_print_job) {
+            return {
+                type: 'error',
+                message: 'No permission to create print jobs',
+                action: null
+            };
+        }
+        
+        if (printJob) {
+            return {
+                type: 'info',
+                message: 'Print job already exists for this invoice',
+                action: 'view'
+            };
+        }
+        
+        if (invoice.status === 'draft') {
+            return {
+                type: 'warning',
+                message: 'Invoice is in draft status. Finalize invoice first.',
+                action: 'edit'
+            };
+        }
+        
+        if (paymentData.remaining_balance > 0) {
+            return {
+                type: 'info',
+                message: `Print job can be created. Remaining balance: ${formatCurrency(paymentData.remaining_balance)}`,
+                action: 'create'
+            };
+        }
+        
+        return {
+            type: 'success',
+            message: 'Invoice is fully paid. Ready for production!',
+            action: 'create'
+        };
     };
 
     return (
@@ -706,9 +752,9 @@ export default function InvoiceShow({
                                         </DialogHeader>
 
                                         <Alert className="mb-4">
-                                            <CheckCircle className="h-4 w-4" />
+                                            <Info className="h-4 w-4" />
                                             <AlertDescription>
-                                                Invoice is fully paid. Ready for production!
+                                                {getPrintJobStatusMessage().message}
                                             </AlertDescription>
                                         </Alert>
 
@@ -864,18 +910,18 @@ export default function InvoiceShow({
                                         <CardTitle className="text-sm text-orange-600">DEBUG: Print Job Status</CardTitle>
                                     </CardHeader>
                                     <CardContent className="text-xs space-y-1">
+                                        <div>Invoice Status: <strong>{invoice.status}</strong></div>
                                         <div>Payment Status: <strong>{invoice.payment_status}</strong></div>
                                         <div>Remaining Balance: <strong>{formatCurrency(paymentData.remaining_balance)}</strong></div>
                                         <div>Print Job Exists: <strong>{printJob ? 'Yes' : 'No'}</strong></div>
                                         <div>Create Permission: <strong>{permissions.create_print_job ? 'Yes' : 'No'}</strong></div>
                                         <div>Can Create Print Job: <strong>{canCreatePrintJob() ? 'Yes' : 'No'}</strong></div>
-                                        {!canCreatePrintJob() && (
-                                            <div className="text-red-600 font-medium">
-                                                Reason: {!permissions.create_print_job ? 'No Permission' : 
-                                                         printJob ? 'Print Job Exists' : 
-                                                         paymentData.remaining_balance > 0 ? 'Payment Incomplete' : 'Unknown'}
-                                            </div>
-                                        )}
+                                        <div className="mt-2 p-2 bg-yellow-50 rounded">
+                                            <strong>Status:</strong> {getPrintJobStatusMessage().message}
+                                        </div>
+                                        <div>
+                                            <strong>Action:</strong> {getPrintJobStatusMessage().action || 'None'}
+                                        </div>
                                     </CardContent>
                                 </Card>
                             )}
@@ -900,7 +946,7 @@ export default function InvoiceShow({
                                             )}
                                         </div>
                                         <div className="text-right">
-                                            <div className="text-2xl font-bold">{invoice.formatted_total}</div>
+                                            <div className="text-2xl font-bold">{invoice.total_amount}</div>
                                             <div className="text-sm text-gray-500">Total Amount</div>
                                         </div>
                                     </div>
@@ -1093,32 +1139,35 @@ export default function InvoiceShow({
                                             </tbody>
                                             <tfoot className="border-t bg-gray-50">
                                                 <tr>
-                                                    <td colSpan={2} className="py-2 font-medium">Subtotal</td>
-                                                    <td className="text-center py-2">{(parseFloat(String(invoice.total_weight)) || 0).toFixed(2)}kg</td>
+                                                    <td colSpan={4} className="py-2 font-medium">Subtotal</td>
+                                                    <td className="text-right py-2 font-medium">{invoice.subtotal}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td colSpan={3} className="py-1 text-sm text-gray-600">Total Weight:</td>
+                                                    <td className="text-center py-1 text-sm font-medium">{(parseFloat(String(invoice.total_weight)) || 0).toFixed(2)}kg</td>
                                                     <td></td>
-                                                    <td className="text-right py-2 font-medium">{invoice.formatted_subtotal}</td>
                                                 </tr>
                                                 {invoice.weight_charge > 0 && (
                                                     <tr>
                                                         <td colSpan={4} className="py-2">Delivery Charge</td>
-                                                        <td className="text-right py-2">{invoice.formatted_weight_charge}</td>
+                                                        <td className="text-right py-2">{invoice.weight_charge}</td>
                                                     </tr>
                                                 )}
                                                 {invoice.tax_amount > 0 && (
                                                     <tr>
                                                         <td colSpan={4} className="py-2">Tax</td>
-                                                        <td className="text-right py-2">{invoice.formatted_tax_amount}</td>
+                                                        <td className="text-right py-2">{invoice.tax_amount}</td>
                                                     </tr>
                                                 )}
                                                 {invoice.discount_amount > 0 && (
                                                     <tr>
                                                         <td colSpan={4} className="py-2">Discount</td>
-                                                        <td className="text-right py-2 text-red-600">-{invoice.formatted_discount_amount}</td>
+                                                        <td className="text-right py-2 text-red-600">-{invoice.discount_amount}</td>
                                                     </tr>
                                                 )}
                                                 <tr className="border-t-2 bg-gray-100">
                                                     <td colSpan={4} className="py-2 font-bold">Total Amount</td>
-                                                    <td className="text-right py-2 font-bold text-lg">{invoice.formatted_total}</td>
+                                                    <td className="text-right py-2 font-bold text-lg">{invoice.total_amount}</td>
                                                 </tr>
                                             </tfoot>
                                         </table>
@@ -1249,15 +1298,28 @@ export default function InvoiceShow({
                                             ) : (
                                                 <div className="text-center py-4">
                                                     <Factory className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                                                    <p className="text-sm text-gray-500">
-                                                        {!permissions.create_print_job ? 'No print job permission' :
-                                                         paymentData.remaining_balance > 0 ? 'Payment required first' :
-                                                         'Print job not available'}
+                                                    <p className="text-sm text-gray-500 mb-2">
+                                                        {getPrintJobStatusMessage().message}
                                                     </p>
+                                                    {getPrintJobStatusMessage().action === 'view' && printJob && (
+                                                        <Button asChild size="sm" variant="outline">
+                                                            <Link href={route('production.print-jobs.show', printJob.id)}>
+                                                                View Print Job
+                                                            </Link>
+                                                        </Button>
+                                                    )}
+                                                    {getPrintJobStatusMessage().action === 'edit' && permissions.edit && (
+                                                        <Button asChild size="sm" variant="outline">
+                                                            <Link href={route('invoices.edit', invoice.id)}>
+                                                                Edit Invoice
+                                                            </Link>
+                                                        </Button>
+                                                    )}
                                                     {paymentData.remaining_balance > 0 && permissions.create_payment && (
                                                         <Button 
                                                             size="sm" 
-                                                            className="mt-2"
+                                                            variant="outline"
+                                                            className="ml-2"
                                                             onClick={() => setIsPaymentDialogOpen(true)}
                                                         >
                                                             Record Payment

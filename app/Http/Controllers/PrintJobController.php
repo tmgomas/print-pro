@@ -177,9 +177,9 @@ class PrintJobController extends Controller
                 }
 
                 // Check if invoice is paid
-                if ($invoice->payment_status !== 'paid') {
-                    return back()->withErrors(['invoice_id' => 'Invoice must be paid before creating print job']);
-                }
+                // if ($invoice->payment_status !== 'paid') {
+                //     return back()->withErrors(['invoice_id' => 'Invoice must be paid before creating print job']);
+                // }
 
                 // Check if print job already exists
                 $existingJob = $this->printJobRepository->findByInvoice($invoice->id);

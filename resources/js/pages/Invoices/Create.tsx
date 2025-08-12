@@ -30,7 +30,8 @@ import {
     Search,
     X,
     ChevronDown,
-    Check
+    Check,
+    Zap
 } from 'lucide-react';
 import { BreadcrumbItem } from '@/types';
 
@@ -256,6 +257,7 @@ export default function CreateInvoice({
 }: Props) {
     const [items, setItems] = useState<InvoiceItem[]>([]);
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+    const [quickSearchInput, setQuickSearchInput] = useState(''); // Quick search state
     const [invoiceTotals, setInvoiceTotals] = useState({
         subtotal: 0,
         totalWeight: 0,
@@ -277,7 +279,7 @@ export default function CreateInvoice({
         notes: '',
         terms_conditions: '',
         discount_amount: '0',
-        status: 'draft',
+        status: 'pending',
         items: [] as any[]
     });
 
@@ -305,6 +307,169 @@ export default function CreateInvoice({
             }
         }
     }, [preSelectedCustomerId, customers]);
+
+    // Handle quick product addition
+    const handleQuickAdd = (searchTerm: string) => {
+        if (!searchTerm.trim()) return;
+        
+        // Search for matching products
+        const matchingProducts = products.filter(product => 
+            product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            product.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            product.value.toString().includes(searchTerm)
+        );
+        
+        if (matchingProducts.length > 0) {
+            // Take the first matching product
+            const product = matchingProducts[0];
+            
+            // Convert weight to kg based on weight_unit
+            let weightInKg = parseFloat(product.weight_per_unit?.toString()) || 0;
+            if (product.weight_unit === 'grams' || product.weight_unit === 'g') {
+                weightInKg = weightInKg / 1000; // Convert grams to kg
+            } else if (product.weight_unit === 'lb') {
+                weightInKg = weightInKg * 0.453592; // Convert pounds to kg
+            } else if (product.weight_unit === 'oz') {
+                weightInKg = weightInKg * 0.0283495; // Convert ounces to kg
+            }
+            
+            const unitPrice = parseFloat(product.base_price?.toString()) || 0;
+            const taxRate = parseFloat(product.tax_rate?.toString()) || 0;
+            const taxAmount = unitPrice * (taxRate / 100);
+            
+            // Create new item with the product
+            const newItem: InvoiceItem = {
+                id: Date.now().toString(),
+                product_id: product.value,
+                item_description: product.name,
+                quantity: '1',
+                unit_price: unitPrice.toString(),
+                unit_weight: weightInKg.toString(),
+                line_total: unitPrice,
+                line_weight: weightInKg,
+                tax_amount: taxAmount,
+                specifications: ''
+            };
+            
+            const newItems = [...items, newItem];
+            setItems(newItems);
+            
+            // Update form data
+            setData('items', newItems.map(item => ({
+                product_id: item.product_id,
+                item_description: item.item_description,
+                quantity: parseFloat(item.quantity) || 0,
+                unit_price: parseFloat(item.unit_price) || 0,
+                unit_weight: parseFloat(item.unit_weight) || 0,
+                specifications: item.specifications ? 
+                    (typeof item.specifications === 'string' ? 
+                        { notes: item.specifications } : 
+                        item.specifications
+                    ) : {}
+            })));
+            
+            // Clear the search input
+            setQuickSearchInput('');
+            
+            console.log(`Quick added: ${product.name}`);
+        } else {
+            alert(`No product found matching "${searchTerm}"`);
+        }
+    };
+
+    // Quick Add Section Component
+    const QuickAddSection = () => (
+        <Card className="border-dashed border-2 border-blue-200 bg-blue-50/50">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-blue-700">
+                    <Zap className="h-5 w-5" />
+                    Quick Add Product
+                </CardTitle>
+                <CardDescription>
+                    Type product name or ID and press Enter to quickly add an item
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex gap-2">
+                    <div className="flex-1 relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            type="text"
+                            placeholder="Search product by name or ID and press Enter..."
+                            value={quickSearchInput}
+                            onChange={(e) => setQuickSearchInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleQuickAdd(quickSearchInput);
+                                }
+                            }}
+                            className="pl-9"
+                        />
+                    </div>
+                    <Button 
+                        type="button" 
+                        onClick={() => handleQuickAdd(quickSearchInput)}
+                        disabled={!quickSearchInput.trim()}
+                        className="shrink-0"
+                    >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add
+                    </Button>
+                </div>
+                
+                {/* Live search suggestions */}
+                {quickSearchInput && (
+                    <div className="mt-3">
+                        <div className="text-sm font-medium text-muted-foreground mb-2">
+                            Matching products:
+                        </div>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {products
+                                .filter(product => 
+                                    product.name.toLowerCase().includes(quickSearchInput.toLowerCase()) ||
+                                    product.label.toLowerCase().includes(quickSearchInput.toLowerCase()) ||
+                                    product.value.toString().includes(quickSearchInput)
+                                )
+                                .slice(0, 5)
+                                .map(product => (
+                                    <div 
+                                        key={product.value}
+                                        className="p-2 bg-white border rounded cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition-colors"
+                                        onClick={() => {
+                                            setQuickSearchInput(product.name);
+                                            handleQuickAdd(product.name);
+                                        }}
+                                    >
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <div className="text-sm font-medium">{product.name}</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    ID: #{product.value} • {product.unit_type}
+                                                </div>
+                                            </div>
+                                            <div className="text-sm font-medium text-green-600">
+                                                Rs. {(parseFloat(product.base_price?.toString()) || 0).toFixed(2)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            }
+                            {quickSearchInput && products.filter(product => 
+                                product.name.toLowerCase().includes(quickSearchInput.toLowerCase()) ||
+                                product.label.toLowerCase().includes(quickSearchInput.toLowerCase()) ||
+                                product.value.toString().includes(quickSearchInput)
+                            ).length === 0 && (
+                                <div className="p-2 text-center text-muted-foreground text-sm">
+                                    No products found matching "{quickSearchInput}"
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
 
     // Add new item
     const addItem = () => {
@@ -573,9 +738,6 @@ export default function CreateInvoice({
                     </Alert>
                 )}
 
-                {/* Debug Info (remove in production) */}
-                
-
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
@@ -727,6 +889,9 @@ export default function CreateInvoice({
                         </CardContent>
                     </Card>
 
+                    {/* Quick Add Product Section */}
+                    
+
                     {/* Invoice Items */}
                     <Card>
                         <CardHeader>
@@ -740,9 +905,9 @@ export default function CreateInvoice({
                                         Add products and services to this invoice
                                     </CardDescription>
                                 </div>
-                                <Button type="button" onClick={addItem} size="sm">
+                                <Button type="button" onClick={addItem} size="sm" variant="outline">
                                     <Plus className="mr-2 h-4 w-4" />
-                                    Add Item
+                                    Add Empty Item
                                 </Button>
                             </div>
                         </CardHeader>
@@ -750,7 +915,7 @@ export default function CreateInvoice({
                             {items.length === 0 ? (
                                 <div className="text-center py-8 text-muted-foreground">
                                     <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                    <p>No items added yet. Click "Add Item" to get started.</p>
+                                    <p>No items added yet. Use "Quick Add Product" above or click "Add Empty Item" to get started.</p>
                                 </div>
                             ) : (
                                 <div className="space-y-4">
@@ -827,7 +992,7 @@ export default function CreateInvoice({
                                                     <Label>Weight (kg)</Label>
                                                     <Input
                                                         type="number"
-                                                        step="0.01"
+                                                        step="any"
                                                         min="0"
                                                         value={item.unit_weight}
                                                         onChange={(e) => updateItem(item.id, 'unit_weight', e.target.value)}
@@ -843,35 +1008,6 @@ export default function CreateInvoice({
                                                     </div>
                                                 </div>
                                             </div>
-
-                                            {/* Description */}
-                                            {/* <div className="space-y-2">
-                                                <Label>Description</Label>
-                                                <Textarea
-                                                    value={item.item_description}
-                                                    onChange={(e) => updateItem(item.id, 'item_description', e.target.value)}
-                                                    placeholder="Item description..."
-                                                    rows={2}
-                                                />
-                                            </div> */}
-
-                                            {/* Specifications */}
-                                            {/* <div className="space-y-2">
-                                                <Label>Specifications</Label>
-                                                <Textarea
-                                                    value={typeof item.specifications === 'string' ? item.specifications : ''}
-                                                    onChange={(e) => updateItem(item.id, 'specifications', e.target.value)}
-                                                    placeholder="Additional specifications or notes..."
-                                                    rows={2}
-                                                />
-                                            </div> */}
-
-                                            {/* Item Summary */}
-                                            {/* <div className="flex items-center justify-between text-sm text-muted-foreground bg-muted/50 p-3 rounded">
-                                                <span>Line Weight: <strong>{item.line_weight.toFixed(2)} kg</strong></span>
-                                                <span>Tax Amount: <strong>Rs. {item.tax_amount.toFixed(2)}</strong></span>
-                                                <span>Line Total: <strong>Rs. {item.line_total.toFixed(2)}</strong></span>
-                                            </div> */}
                                         </div>
                                     ))}
                                 </div>
@@ -880,7 +1016,7 @@ export default function CreateInvoice({
                             <InputError message={errors.items} />
                         </CardContent>
                     </Card>
-
+<QuickAddSection />
                     {/* Additional Information */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Notes & Terms */}

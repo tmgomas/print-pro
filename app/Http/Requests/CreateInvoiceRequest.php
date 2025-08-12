@@ -25,8 +25,8 @@ class CreateInvoiceRequest extends FormRequest
             'invoice_date' => 'sometimes|date|before_or_equal:today',
             'due_date' => 'sometimes|date|after_or_equal:invoice_date',
             'discount_amount' => 'sometimes|numeric|min:0',
-            'notes' => 'sometimes|string|max:1000',
-            'terms_conditions' => 'sometimes|string|max:2000',
+            'notes' => 'nullable|string|max:1000',
+            'terms_conditions' => 'nullable|string|max:2000',
             'status' => 'sometimes|in:draft,pending,processing,completed,cancelled',
             
             // Invoice items validation
