@@ -182,42 +182,42 @@ private function generateNextRecurringExpense(Expense $expense): ?Expense
     /**
      * Create new expense
      */
-    public function createExpense(array $data, User $user): Expense
-    {
-        try {
-            // Generate expense number
-            $data['expense_number'] = Expense::generateExpenseNumber($user->company_id, $data['branch_id']);
-            $data['company_id'] = $user->company_id;
-            $data['created_by'] = $user->id;
+// app/Services/ExpenseService.php file එකේ createExpense method එක modify කරන්න:
 
-            // Calculate next due date for recurring expenses
-            if ($data['is_recurring'] && isset($data['recurring_period'])) {
-                $data['next_due_date'] = $this->calculateNextDueDate(
-                    Carbon::parse($data['expense_date']),
-                    $data['recurring_period']
-                );
-            }
-
-            return $this->createWithTransaction($data, function ($expense) use ($data) {
-                // Submit for approval if requested
-                if (isset($data['submit_for_approval']) && $data['submit_for_approval']) {
-                    $this->submitForApproval($expense, $data['notes'] ?? null);
-                }
-
-                // Update budget if expense is approved
-                if (in_array($expense->status, ['approved', 'paid'])) {
-                    $this->updateBudgetSpending($expense);
-                }
-            });
-
-        } catch (\Exception $e) {
-            $this->handleException($e, 'create expense');
-            throw $e;
+// app/Services/ExpenseService.php
+public function createExpense(array $data, User $user): Expense
+{
+    try {
+        // Generate expense number
+        $data['expense_number'] = Expense::generateExpenseNumber($user->company_id, $data['branch_id']);
+        $data['company_id'] = $user->company_id;
+        $data['created_by'] = $user->id;
+        
+        // Set default status to draft (explicit)
+        if (!isset($data['status'])) {
+            $data['status'] = 'draft';
         }
+
+        // Calculate next due date for recurring expenses
+        if ($data['is_recurring'] && isset($data['recurring_period'])) {
+            $data['next_due_date'] = $this->calculateNextDueDate(
+                Carbon::parse($data['expense_date']),
+                $data['recurring_period']
+            );
+        }
+
+        return $this->createWithTransaction($data, function ($expense) use ($data) {
+            // Submit for approval if requested
+            if (isset($data['submit_for_approval']) && $data['submit_for_approval']) {
+                $this->submitForApproval($expense, $data['notes'] ?? null);
+            }
+        });
+
+    } catch (\Exception $e) {
+        $this->handleException($e, 'create expense');
+        throw $e;
     }
-
-
-
+}
 
 
     /**
@@ -344,5 +344,18 @@ private function generateNextRecurringExpense(Expense $expense): ?Expense
             $this->notificationService->notifyExpensePendingApproval($expense, $approver);
         }
     }
+// app/Services/ExpenseService.php
+// Add this method to ExpenseService class:
 
+/**
+ * Validate business rules for operations
+ */
+private function validateBusinessRules(array $rules): void
+{
+    foreach ($rules as $rule => $condition) {
+        if (!$condition) {
+            throw new \InvalidArgumentException("Business rule validation failed: {$rule}");
+        }
+    }
+}
 }

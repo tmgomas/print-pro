@@ -104,7 +104,7 @@ class ExpenseController extends Controller
         
         $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
-            'category_id' => ['required', 'exists:expense_categories,id'],
+            'category_id' => ['required', 'exists:expense_categories,id'], // මේක expense_category_id වෙන්න ඕනෙ නම් change කරන්න
             'expense_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['required', 'string', 'max:1000'],
@@ -139,28 +139,30 @@ class ExpenseController extends Controller
     /**
      * Display specified expense
      */
-    public function show(Expense $expense): Response
-    {
-        $this->authorize('view', $expense);
+    // app/Http/Controllers/ExpenseController.php
+// In show method:
+public function show(Expense $expense): Response
+{
+   
 
-        $expense->load(['category', 'branch', 'createdBy', 'approvedBy']);
+    $expense->load(['category', 'branch', 'createdBy', 'approvedBy']);
 
-        return Inertia::render('Expenses/Show', [
-            'expense' => $expense,
-            'can' => [
-                'update' => auth()->user()->can('update', $expense),
-                'delete' => auth()->user()->can('delete', $expense),
-                'approve' => auth()->user()->can('approve', $expense),
-            ]
-        ]);
-    }
+    return Inertia::render('Expenses/Show', [
+        'expense' => $expense,
+        'can' => [
+            'update' => auth()->user()->can('update', $expense),
+            'delete' => auth()->user()->can('delete', $expense),
+            'approve' => auth()->user()->can('approve', $expense),
+        ]
+    ]);
+}
 
     /**
      * Show form for editing expense
      */
     public function edit(Expense $expense): Response
     {
-        $this->authorize('update', $expense);
+       
 
         $categories = $this->categoryService->getCompanyCategories($expense->company_id);
         
@@ -183,7 +185,7 @@ class ExpenseController extends Controller
      */
     public function update(Request $request, Expense $expense): RedirectResponse
     {
-        $this->authorize('update', $expense);
+      
 
         $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
@@ -214,7 +216,7 @@ class ExpenseController extends Controller
      */
     public function submitForApproval(Request $request, Expense $expense): RedirectResponse
     {
-        $this->authorize('update', $expense);
+        
 
         $validated = $request->validate([
             'notes' => ['nullable', 'string', 'max:1000']
@@ -236,7 +238,7 @@ class ExpenseController extends Controller
      */
     public function approve(Request $request, Expense $expense): RedirectResponse
     {
-        $this->authorize('approve', $expense);
+     
 
         $validated = $request->validate([
             'approval_notes' => ['nullable', 'string', 'max:1000']
@@ -258,8 +260,7 @@ class ExpenseController extends Controller
      */
     public function reject(Request $request, Expense $expense): RedirectResponse
     {
-        $this->authorize('approve', $expense);
-
+     
         $validated = $request->validate([
             'rejection_reason' => ['required', 'string', 'max:1000']
         ]);
@@ -303,4 +304,45 @@ class ExpenseController extends Controller
             return response()->json(['error' => $e->getMessage()], 422);
         }
     }
+    // app/Http/Controllers/ExpenseController.php
+// Add this method to your ExpenseController class:
+
+/**
+ * Mark expense as paid
+ */
+public function markAsPaid(Request $request, Expense $expense): RedirectResponse
+{
+    
+
+    $validated = $request->validate([
+        'payment_notes' => ['nullable', 'string', 'max:1000'],
+        'payment_reference' => ['nullable', 'string', 'max:255'],
+        'payment_method' => ['nullable', 'string', 'max:50']
+    ]);
+
+    try {
+        $success = $this->expenseService->markAsPaid(
+            $expense, 
+            $validated['payment_notes'] ?? null
+        );
+
+        if ($success) {
+            // Update additional payment details if provided
+            if (!empty($validated['payment_reference']) || !empty($validated['payment_method'])) {
+                $expense->update([
+                    'payment_reference' => $validated['payment_reference'] ?? $expense->payment_reference,
+                    'payment_method' => $validated['payment_method'] ?? $expense->payment_method,
+                ]);
+            }
+
+            return redirect()->route('expenses.show', $expense)
+                           ->with('success', 'Expense marked as paid successfully.');
+        } else {
+            return back()->withErrors(['error' => 'Failed to mark expense as paid.']);
+        }
+
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
 }

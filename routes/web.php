@@ -278,6 +278,7 @@ Route::middleware('permission:manage production')->group(function () {
         Route::post('expenses/{expense}/approve', [ExpenseController::class, 'approve'])->name('expenses.approve');
         Route::post('expenses/{expense}/reject', [ExpenseController::class, 'reject'])->name('expenses.reject');
         Route::post('expenses/{expense}/mark-as-paid', [ExpenseController::class, 'markAsPaid'])->name('expenses.mark-as-paid');
+        
         Route::post('expenses/bulk-approve', [ExpenseController::class, 'bulkApprove'])->name('expenses.bulk-approve');
         Route::post('expenses/bulk-reject', [ExpenseController::class, 'bulkReject'])->name('expenses.bulk-reject');
         Route::get('expenses/{expense}/download-receipt/{attachment}', [ExpenseController::class, 'downloadReceipt'])->name('expenses.download-receipt');

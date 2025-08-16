@@ -14,15 +14,16 @@ class Expense extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = [
-        'company_id', 'branch_id', 'expense_category_id', 'submitted_by', 'approved_by',
-        'expense_number', 'expense_date', 'amount', 'description', 'vendor_name',
-        'vendor_address', 'vendor_phone', 'vendor_email', 'payment_method',
-        'payment_reference', 'receipt_number', 'receipt_attachments', 'status',
-        'approval_status', 'payment_status', 'priority', 'is_recurring', 
-        'recurring_period', 'due_date', 'notes', 'approval_notes', 
-        'rejection_reason', 'approved_at', 'paid_at', 'metadata', 'tax_details'
-    ];
+    // app/Models/Expense.php file එකේ fillable array එක:
+protected $fillable = [
+    'company_id', 'branch_id', 'category_id', 'created_by', 'approved_by', // Fix field names
+    'expense_number', 'expense_date', 'amount', 'description', 'vendor_name',
+    'vendor_address', 'vendor_phone', 'vendor_email', 'payment_method',
+    'payment_reference', 'receipt_number', 'receipt_attachments', 'status',
+    'priority', 'is_recurring', 'recurring_period', 'next_due_date', 'notes', 
+    'approval_notes', 'rejection_reason', 'approved_at', 'paid_at', 
+    'metadata', 'tax_details'
+];
 
     protected $casts = [
         'expense_date' => 'date',
@@ -35,13 +36,27 @@ class Expense extends Model
         'metadata' => 'json',
         'tax_details' => 'json',
     ];
+public function markAsPaid(string $notes = null): bool
+{
+    if ($this->status !== 'approved') {
+        return false;
+    }
 
+    return $this->update([
+        'status' => 'paid',
+        'paid_at' => now(),
+        'notes' => $notes ? ($this->notes . "\n\nPayment Notes: " . $notes) : $this->notes,
+    ]);
+}
     // Relationships
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
     }
-
+public function createdBy(): BelongsTo
+{
+    return $this->belongsTo(User::class, 'created_by');
+}
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
