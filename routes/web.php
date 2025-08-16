@@ -20,6 +20,8 @@ use App\Http\Controllers\PaymentVerificationController; // ✅ Add this if missi
 use App\Http\Controllers\ProductionController;
 use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\ExpenseCategoryController;
+use App\Http\Controllers\ExpenseController;
 use Inertia\Inertia;
 
 /*
@@ -255,6 +257,56 @@ Route::middleware('permission:manage production')->group(function () {
         Route::get('reports/production', [ReportController::class, 'productionReport'])->name('reports.production');
         Route::get('reports/delivery', [ReportController::class, 'deliveryReport'])->name('reports.delivery');
         Route::get('reports/financial', [ReportController::class, 'financialReport'])->name('reports.financial');
+    });
+
+     Route::middleware('permission:manage expense_categories')->group(function () {
+        Route::resource('expense-categories', ExpenseCategoryController::class);
+        Route::get('expense-categories/search', [ExpenseCategoryController::class, 'search'])->name('expense-categories.search');
+        Route::post('expense-categories/reorder', [ExpenseCategoryController::class, 'reorder'])->name('expense-categories.reorder');
+        Route::patch('expense-categories/{expenseCategory}/activate', [ExpenseCategoryController::class, 'activate'])->name('expense-categories.activate');
+        Route::patch('expense-categories/{expenseCategory}/deactivate', [ExpenseCategoryController::class, 'deactivate'])->name('expense-categories.deactivate');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Expense Routes
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('permission:manage expenses')->group(function () {
+        Route::resource('expenses', ExpenseController::class);
+        Route::post('expenses/{expense}/submit-for-approval', [ExpenseController::class, 'submitForApproval'])->name('expenses.submit-for-approval');
+        Route::post('expenses/{expense}/approve', [ExpenseController::class, 'approve'])->name('expenses.approve');
+        Route::post('expenses/{expense}/reject', [ExpenseController::class, 'reject'])->name('expenses.reject');
+        Route::post('expenses/{expense}/mark-as-paid', [ExpenseController::class, 'markAsPaid'])->name('expenses.mark-as-paid');
+        Route::post('expenses/bulk-approve', [ExpenseController::class, 'bulkApprove'])->name('expenses.bulk-approve');
+        Route::post('expenses/bulk-reject', [ExpenseController::class, 'bulkReject'])->name('expenses.bulk-reject');
+        Route::get('expenses/{expense}/download-receipt/{attachment}', [ExpenseController::class, 'downloadReceipt'])->name('expenses.download-receipt');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Expense Budget Routes
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('permission:manage expense_budgets')->group(function () {
+        Route::resource('expense-budgets', ExpenseBudgetController::class);
+        Route::post('expense-budgets/{expenseBudget}/extend', [ExpenseBudgetController::class, 'extend'])->name('expense-budgets.extend');
+        Route::patch('expense-budgets/{expenseBudget}/activate', [ExpenseBudgetController::class, 'activate'])->name('expense-budgets.activate');
+        Route::patch('expense-budgets/{expenseBudget}/deactivate', [ExpenseBudgetController::class, 'deactivate'])->name('expense-budgets.deactivate');
+        Route::get('expense-budgets/analytics', [ExpenseBudgetController::class, 'analytics'])->name('expense-budgets.analytics');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Expense Reports Routes
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('permission:view expense_reports')->group(function () {
+        Route::get('expense-reports', [ExpenseReportController::class, 'index'])->name('expense-reports.index');
+        Route::get('expense-reports/summary', [ExpenseReportController::class, 'summary'])->name('expense-reports.summary');
+        Route::get('expense-reports/category-analysis', [ExpenseReportController::class, 'categoryAnalysis'])->name('expense-reports.category-analysis');
+        Route::get('expense-reports/budget-analysis', [ExpenseReportController::class, 'budgetAnalysis'])->name('expense-reports.budget-analysis');
+        Route::post('expense-reports/export', [ExpenseReportController::class, 'export'])->name('expense-reports.export');
     });
 
     /*
