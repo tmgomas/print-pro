@@ -355,7 +355,7 @@ export default function ExpenseShow({ expense, can }: Props) {
                                             <DollarSign className="h-4 w-4 text-gray-500" />
                                             <div>
                                                 <p className="text-sm text-gray-600">Amount</p>
-                                                <p className="font-semibold text-lg">{expense.formatted_amount}</p>
+                                                <p className="font-semibold text-lg">{expense.amount}</p>
                                             </div>
                                         </div>
                                         
@@ -381,7 +381,7 @@ export default function ExpenseShow({ expense, can }: Props) {
                                             <Building2 className="h-4 w-4 text-gray-500" />
                                             <div>
                                                 <p className="text-sm text-gray-600">Branch</p>
-                                                <p className="font-medium">{expense.branch?.branch_name || 'N/A'}</p>
+                                                <p className="font-medium">{expense.branch?.name || 'N/A'}</p>
                                             </div>
                                         </div>
 

@@ -64,7 +64,7 @@ public function createdBy(): BelongsTo
 
     public function category(): BelongsTo
     {
-        return $this->belongsTo(ExpenseCategory::class, 'expense_category_id');
+        return $this->belongsTo(ExpenseCategory::class, 'category_id');
     }
 
     public function submittedBy(): BelongsTo

@@ -151,6 +151,8 @@ interface Branch {
 }
 
 interface ExpenseStats {
+    formatted: any;
+    this_month: any;
     this_month_total: number;
     pending_approval: {
         count: number;
@@ -343,66 +345,76 @@ export default function ExpensesIndex({
                 </div>
 
                 {/* Stats Cards - FIXED: Safe currency formatting */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card>
-                        <CardContent className="p-6">
-                            <div className="flex items-center">
-                                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                            <div className="mt-2">
-                                <p className="text-2xl font-bold">{formatCurrency(stats?.this_month_total)}</p>
-                                <p className="text-xs text-muted-foreground">This Month</p>
-                            </div>
-                        </CardContent>
-                    </Card>
+                {/* Stats Cards - FIXED: Correct data access */}
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    {/* This Month Total */}
+    <Card>
+        <CardContent className="p-6">
+            <div className="flex items-center">
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="mt-2">
+                <p className="text-2xl font-bold">
+                    {formatCurrency(stats.this_month?.amount)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                    This Month Total ({formatNumber(stats.this_month?.count)} expenses)
+                </p>
+            </div>
+        </CardContent>
+    </Card>
 
-                    <Card>
-                        <CardContent className="p-6">
-                            <div className="flex items-center">
-                                <Clock className="h-4 w-4 text-yellow-600" />
-                            </div>
-                            <div className="mt-2">
-                                <p className="text-2xl font-bold">{formatNumber(stats?.pending_approval?.count)}</p>
-                                <p className="text-xs text-muted-foreground">
-                                    Pending ({formatCurrency(stats?.pending_approval?.total)})
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
+    {/* Pending Approval */}
+    <Card>
+        <CardContent className="p-6">
+            <div className="flex items-center">
+                <Clock className="h-4 w-4 text-yellow-600" />
+            </div>
+            <div className="mt-2">
+                <p className="text-2xl font-bold">
+                    {formatCurrency(stats.this_month?.pending_amount)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                    This Month Pending ({formatNumber(stats.pending_approval)} expenses)
+                </p>
+            </div>
+        </CardContent>
+    </Card>
 
-                    <Card>
-                        <CardContent className="p-6">
-                            <div className="flex items-center">
-                                <CheckCircle className="h-4 w-4 text-green-600" />
-                            </div>
-                            <div className="mt-2">
-                                <p className="text-2xl font-bold">
-                                    {formatNumber(stats?.by_status?.approved?.count)}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    Approved ({formatCurrency(stats?.by_status?.approved?.total)})
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
+    {/* Approved */}
+    <Card>
+        <CardContent className="p-6">
+            <div className="flex items-center">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+            </div>
+            <div className="mt-2">
+                <p className="text-2xl font-bold">
+                    {formatCurrency(stats.this_month?.approved_amount)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                    This Month Approved ({formatNumber(stats.approved)} expenses)
+                </p>
+            </div>
+        </CardContent>
+    </Card>
 
-                    <Card>
-                        <CardContent className="p-6">
-                            <div className="flex items-center">
-                                <DollarSign className="h-4 w-4 text-blue-600" />
-                            </div>
-                            <div className="mt-2">
-                                <p className="text-2xl font-bold">
-                                    {formatNumber(stats?.by_status?.paid?.count)}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    Paid ({formatCurrency(stats?.by_status?.paid?.total)})
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-
+    {/* Paid */}
+    <Card>
+        <CardContent className="p-6">
+            <div className="flex items-center">
+                <DollarSign className="h-4 w-4 text-blue-600" />
+            </div>
+            <div className="mt-2">
+                <p className="text-2xl font-bold">
+                    {formatCurrency(stats.by_status?.paid?.amount)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                    Paid ({formatNumber(stats.paid)} expenses)
+                </p>
+            </div>
+        </CardContent>
+    </Card>
+</div>
                 {/* Filters */}
                 <Card>
                     <CardContent className="p-6">

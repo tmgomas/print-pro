@@ -284,47 +284,105 @@ class ExpenseRepository extends BaseRepository
      * Get expense statistics for company
      */
     public function getExpenseStats(int $companyId, ?int $branchId = null): array
-    {
-        $query = $this->model->where('company_id', $companyId);
-        
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
-
-        // Base stats
-        $totalExpenses = (clone $query)->count();
-        $totalAmount = (clone $query)->sum('amount');
-        
-        // Status-based stats - FIXED: use correct status values
-        $pendingCount = (clone $query)->where('status', 'pending_approval')->count();
-        $approvedCount = (clone $query)->where('status', 'approved')->count();
-        $rejectedCount = (clone $query)->where('status', 'rejected')->count();
-        $paidCount = (clone $query)->where('status', 'paid')->count();
-        
-        // This month stats
-        $thisMonthAmount = (clone $query)
-            ->whereMonth('expense_date', now()->month)
-            ->whereYear('expense_date', now()->year)
-            ->sum('amount');
-            
-        $thisMonthCount = (clone $query)
-            ->whereMonth('expense_date', now()->month)
-            ->whereYear('expense_date', now()->year)
-            ->count();
-
-        return [
-            'total_expenses' => $totalExpenses,
-            'total_amount' => $totalAmount,
-            'pending_approval' => $pendingCount,
-            'approved' => $approvedCount,
-            'rejected' => $rejectedCount,
-            'paid' => $paidCount,
-            'this_month_amount' => $thisMonthAmount,
-            'this_month_count' => $thisMonthCount,
-            'formatted_total_amount' => 'Rs. ' . number_format($totalAmount, 2),
-            'formatted_this_month_amount' => 'Rs. ' . number_format($thisMonthAmount, 2),
-        ];
+{
+    $query = $this->model->where('company_id', $companyId);
+    
+    if ($branchId) {
+        $query->where('branch_id', $branchId);
     }
+
+    // Base stats
+    $totalExpenses = (clone $query)->count();
+    $totalAmount = (clone $query)->sum('amount');
+    
+    // Status-based detailed stats
+    $statusStats = [
+        'draft' => [
+            'count' => (clone $query)->where('status', 'draft')->count(),
+            'amount' => (clone $query)->where('status', 'draft')->sum('amount')
+        ],
+        'pending_approval' => [
+            'count' => (clone $query)->where('status', 'pending_approval')->count(),
+            'amount' => (clone $query)->where('status', 'pending_approval')->sum('amount')
+        ],
+        'approved' => [
+            'count' => (clone $query)->where('status', 'approved')->count(),
+            'amount' => (clone $query)->where('status', 'approved')->sum('amount')
+        ],
+        'rejected' => [
+            'count' => (clone $query)->where('status', 'rejected')->count(),
+            'amount' => (clone $query)->where('status', 'rejected')->sum('amount')
+        ],
+        'paid' => [
+            'count' => (clone $query)->where('status', 'paid')->count(),
+            'amount' => (clone $query)->where('status', 'paid')->sum('amount')
+        ],
+        'cancelled' => [
+            'count' => (clone $query)->where('status', 'cancelled')->count(),
+            'amount' => (clone $query)->where('status', 'cancelled')->sum('amount')
+        ]
+    ];
+    
+    // This month stats
+    $thisMonth = [
+        'count' => (clone $query)
+            ->whereMonth('expense_date', now()->month)
+            ->whereYear('expense_date', now()->year)
+            ->count(),
+        'amount' => (clone $query)
+            ->whereMonth('expense_date', now()->month)
+            ->whereYear('expense_date', now()->year)
+            ->sum('amount'),
+        'pending_amount' => (clone $query)
+            ->where('status', 'pending_approval')
+            ->whereMonth('expense_date', now()->month)
+            ->whereYear('expense_date', now()->year)
+            ->sum('amount'),
+        'approved_amount' => (clone $query)
+            ->where('status', 'approved')
+            ->whereMonth('expense_date', now()->month)
+            ->whereYear('expense_date', now()->year)
+            ->sum('amount')
+    ];
+
+    return [
+        // Summary
+        'total_expenses' => $totalExpenses,
+        'total_amount' => $totalAmount,
+        
+        // Main amounts you requested
+        'pending_amount' => $statusStats['pending_approval']['amount'],
+        'approved_amount' => $statusStats['approved']['amount'],
+        
+        // Detailed status breakdown
+        'by_status' => $statusStats,
+        
+        // This month data
+        'this_month' => $thisMonth,
+        
+        // Formatted key amounts
+        'formatted' => [
+            'total_amount' => 'Rs. ' . number_format($totalAmount, 2),
+            'pending_amount' => 'Rs. ' . number_format($statusStats['pending_approval']['amount'], 2),
+            'approved_amount' => 'Rs. ' . number_format($statusStats['approved']['amount'], 2),
+            'paid_amount' => 'Rs. ' . number_format($statusStats['paid']['amount'], 2),
+            'this_month_amount' => 'Rs. ' . number_format($thisMonth['amount'], 2),
+        ],
+        
+        // Quick access to counts (backward compatibility)
+        'pending_approval' => $statusStats['pending_approval']['count'],
+        'approved' => $statusStats['approved']['count'],
+        'rejected' => $statusStats['rejected']['count'],
+        'paid' => $statusStats['paid']['count'],
+        
+        // Percentages
+        'percentages' => [
+            'pending_of_total' => $totalAmount > 0 ? round($statusStats['pending_approval']['amount'] / $totalAmount * 100, 2) : 0,
+            'approved_of_total' => $totalAmount > 0 ? round($statusStats['approved']['amount'] / $totalAmount * 100, 2) : 0,
+            'paid_of_total' => $totalAmount > 0 ? round($statusStats['paid']['amount'] / $totalAmount * 100, 2) : 0,
+        ]
+    ];
+}
 
     /**
      * Get recent expenses

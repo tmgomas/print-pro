@@ -45,7 +45,7 @@ class ExpenseController extends Controller
         }
 
         $expenses = $this->expenseService->getPaginatedExpenses($filters, 15);
-
+       
         // Get filter options
         $categories = $this->categoryService->getCompanyCategories($companyId);
         
@@ -54,7 +54,7 @@ class ExpenseController extends Controller
                    : collect();
 
         $stats = $this->expenseService->getExpenseStats($companyId, $branchId);
-
+//  dd($stats);
         return Inertia::render('Expenses/Index', [
             'expenses' => $expenses,
             'categories' => $categories,
@@ -146,7 +146,7 @@ public function show(Expense $expense): Response
    
 
     $expense->load(['category', 'branch', 'createdBy', 'approvedBy']);
-
+    // dd($expense);
     return Inertia::render('Expenses/Show', [
         'expense' => $expense,
         'can' => [
