@@ -514,8 +514,7 @@ export default function InvoiceShow({
         <AppLayout>
             <Head title={`Invoice ${invoice.invoice_number}`} />
 
-            {/* Print-specific styles */}
-           <style>{`
+        <style>{`
                 /* Hide print area by default */
                 .print-area {
                     display: none;
@@ -540,15 +539,14 @@ export default function InvoiceShow({
                         top: 0;
                         width: 100%;
                         background: white;
-                        color: #1a1a1a;
-                        padding: 0;
+                        color: #000;
+                        padding: 40px;
                         margin: 0;
                         box-shadow: none;
                         border: none;
-                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                        font-size: 11px;
+                        font-family: Arial, sans-serif;
+                        font-size: 12px;
                         line-height: 1.4;
-                        font-weight: 400;
                     }
                     
                     .print-area * {
@@ -560,424 +558,119 @@ export default function InvoiceShow({
                         display: none !important;
                     }
                     
-                    /* SLT Style Header with Blue Background */
-                    .print-area .company-info {
-                        background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%) !important;
-                        color: white !important;
-                        padding: 25px;
-                        margin-bottom: 0;
-                        position: relative;
-                    }
-                    
-                    .print-area .company-info * {
-                        color: white !important;
-                    }
-                    
-                    .print-area .company-info h1 {
-                        font-size: 36px;
-                        font-weight: 800;
-                        margin-bottom: 5px;
-                        letter-spacing: 2px;
-                        text-transform: uppercase;
-                        text-align: left;
-                        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                    }
-                    
-                    .print-area .company-info .company-subtitle {
-                        font-size: 14px;
-                        font-weight: 600;
-                        margin-bottom: 15px;
-                        opacity: 0.9;
-                    }
-                    
-                    .print-area .company-info img {
-                        position: absolute;
-                        right: 25px;
-                        top: 25px;
-                        max-height: 80px !important;
-                        max-width: 150px !important;
-                        filter: brightness(0) invert(1);
-                    }
-                    
-                    /* SLT Style Invoice Title Section */
-                    .print-area .invoice-details {
-                        background: #f8fafc !important;
-                        padding: 20px 25px;
-                        margin-bottom: 0;
-                        border-bottom: 3px solid #2563eb;
-                    }
-                    
-                    .print-area .invoice-details h2 {
-                        font-size: 24px;
-                        color: #1e40af !important;
-                        margin-bottom: 15px;
-                        font-weight: 700;
-                        letter-spacing: 1px;
-                        text-transform: uppercase;
-                    }
-                    
-                    /* Customer Info Section - SLT Style */
-                    .print-area .customer-info {
-                        background: white !important;
-                        padding: 25px;
-                        margin-bottom: 0;
-                        border-bottom: 1px solid #e2e8f0;
-                    }
-                    
-                    .print-area .customer-info h3 {
-                        font-size: 16px;
-                        font-weight: 700;
-                        color: #1e40af !important;
-                        margin-bottom: 15px;
-                        text-transform: uppercase;
-                        letter-spacing: 1px;
-                        border-bottom: 2px solid #3b82f6;
-                        padding-bottom: 5px;
-                        display: inline-block;
-                    }
-                    
-                    /* Account Information Grid - SLT Style */
-                    .print-area .account-info-grid {
-                        display: table;
-                        width: 100%;
-                        margin: 20px 0;
-                        border-collapse: separate;
-                        border-spacing: 0;
-                    }
-                    
-                    .print-area .account-info-item {
-                        display: table-cell;
-                        width: 50%;
-                        vertical-align: top;
-                        padding: 15px;
-                        border: 1px solid #cbd5e1;
-                        background: #f8fafc;
-                    }
-                    
-                    .print-area .account-info-item:first-child {
-                        border-right: none;
-                    }
-                    
-                    .print-area .account-info-label {
-                        font-size: 10px;
-                        color: #64748b !important;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        margin-bottom: 5px;
-                        letter-spacing: 0.5px;
-                    }
-                    
-                    .print-area .account-info-value {
-                        font-size: 13px;
-                        color: #1e293b !important;
-                        font-weight: 700;
-                    }
-                    
-                    /* Summary Section - SLT Style */
-                    .print-area .summary-section {
-                        background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%) !important;
-                        padding: 20px 25px;
-                        margin: 20px 0;
-                        color: white !important;
-                    }
-                    
-                    .print-area .summary-section * {
-                        color: white !important;
-                    }
-                    
-                    .print-area .summary-section h3 {
-                        font-size: 18px;
-                        font-weight: 700;
-                        margin-bottom: 15px;
-                        text-transform: uppercase;
-                        letter-spacing: 1px;
-                        text-align: center;
-                    }
-                    
-                    .print-area .summary-boxes {
-                        display: table;
-                        width: 100%;
-                        table-layout: fixed;
-                    }
-                    
-                    .print-area .summary-box {
-                        display: table-cell;
-                        text-align: center;
-                        padding: 15px 10px;
-                        border-right: 1px solid rgba(255,255,255,0.3);
-                        vertical-align: middle;
-                    }
-                    
-                    .print-area .summary-box:last-child {
-                        border-right: none;
-                    }
-                    
-                    .print-area .summary-box-label {
-                        font-size: 10px;
-                        opacity: 0.8;
-                        margin-bottom: 5px;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                    }
-                    
-                    .print-area .summary-box-value {
-                        font-size: 16px;
-                        font-weight: 800;
-                        text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-                    }
-                    
-                    /* Charges Table - SLT Style */
-                    .print-area .charges-section {
-                        margin: 25px 0;
-                    }
-                    
-                    .print-area .charges-section h3 {
-                        background: #1e40af !important;
-                        color: white !important;
-                        padding: 12px 25px;
-                        margin: 0 0 0 0;
-                        font-size: 14px;
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        letter-spacing: 1px;
-                    }
-                    
-                    .print-area .charges-table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        border: 1px solid #cbd5e1;
-                        background: white;
-                    }
-                    
-                    .print-area .charges-table td {
-                        padding: 12px 25px;
-                        border-bottom: 1px solid #e2e8f0;
-                        font-size: 12px;
-                    }
-                    
-                    .print-area .charges-table .charge-description {
-                        color: #374151 !important;
-                        font-weight: 500;
-                    }
-                    
-                    .print-area .charges-table .charge-amount {
-                        text-align: right;
-                        color: #1e293b !important;
-                        font-weight: 700;
-                        font-size: 13px;
-                    }
-                    
-                    .print-area .charges-table .total-row {
-                        background: #f1f5f9 !important;
-                        border-top: 2px solid #3b82f6;
-                    }
-                    
-                    .print-area .charges-table .total-row td {
-                        font-weight: 800;
-                        font-size: 14px;
-                        color: #1e40af !important;
-                    }
-                    
-                    /* Regular Table Style for Items */
+                    /* Table styling */
                     .print-area table {
-                        border-collapse: collapse;
-                        width: 100%;
-                        margin-bottom: 20px;
-                        font-size: 11px;
-                        background: white;
-                        border: 1px solid #cbd5e1;
+                        border-collapse: collapse !important;
+                        width: 100% !important;
+                        font-size: 12px !important;
+                        background: white !important;
                     }
                     
-                    .print-area table thead {
-                        background: linear-gradient(135deg, #374151 0%, #1f2937 100%) !important;
-                    }
-                    
+                    .print-area table td,
                     .print-area table th {
-                        padding: 12px;
-                        font-weight: 600;
-                        text-align: left;
-                        color: white !important;
-                        font-size: 10px;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                        border-bottom: 2px solid #3b82f6;
+                        padding: 8px !important;
+                        font-size: 12px !important;
+                        vertical-align: top !important;
                     }
                     
-                    .print-area table td {
-                        padding: 12px;
-                        border-bottom: 1px solid #e2e8f0;
-                        vertical-align: top;
-                        font-size: 11px;
-                        color: #374151 !important;
+                    /* Header styling */
+                    .print-area h1 {
+                        color: #000 !important;
+                        font-weight: bold !important;
                     }
                     
-                    .print-area table tbody tr:nth-child(even) {
-                        background: #f8fafc !important;
+                    .print-area h2 {
+                        color: #000 !important;
+                        font-weight: bold !important;
                     }
                     
-                    /* Status Badges - SLT Style */
-                    .print-area .badge {
-                        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
-                        color: #1e40af !important;
-                        border: 1px solid #3b82f6;
-                        padding: 4px 12px;
-                        font-size: 9px;
-                        border-radius: 15px;
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                        display: inline-block;
+                    .print-area h3 {
+                        color: #000 !important;
+                        font-weight: bold !important;
                     }
                     
-                    /* Payment Information */
-                    .print-area .payment-info {
-                        background: #f0f9ff !important;
-                        border: 1px solid #0ea5e9;
-                        border-radius: 8px;
-                        padding: 20px;
-                        margin: 20px 0;
+                    .print-area h4 {
+                        color: #000 !important;
+                        font-weight: bold !important;
                     }
                     
-                    /* QR Code Section */
-                    .print-area .qr-section {
-                        position: absolute;
-                        right: 25px;
-                        top: 150px;
-                        text-align: center;
-                        background: white;
-                        padding: 15px;
-                        border: 2px solid #3b82f6;
-                        border-radius: 8px;
-                    }
-                    
-                    .print-area .qr-code {
-                        width: 80px;
-                        height: 80px;
-                        background: #f3f4f6;
-                        border: 1px solid #d1d5db;
-                        margin: 0 auto 10px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 8px;
-                        color: #6b7280;
-                    }
-                    
-                    /* Footer - SLT Style */
-                    .print-area .footer-section {
-                        background: linear-gradient(135deg, #1e293b 0%, #374151 100%) !important;
-                        color: white !important;
-                        padding: 20px 25px;
-                        margin-top: 30px;
-                        text-align: center;
-                    }
-                    
-                    .print-area .footer-section * {
-                        color: white !important;
-                    }
-                    
-                    .print-area .footer-section .footer-message {
-                        font-size: 12px;
-                        font-weight: 600;
-                        margin-bottom: 10px;
-                    }
-                    
-                    .print-area .footer-section .footer-contact {
-                        font-size: 10px;
-                        opacity: 0.8;
-                    }
-                    
-                    /* Notice Section */
-                    .print-area .notice-section {
-                        background: #fef3c7 !important;
-                        border: 1px solid #f59e0b;
-                        padding: 15px;
-                        margin: 20px 0;
-                        border-radius: 6px;
-                    }
-                    
-                    .print-area .notice-section h4 {
-                        color: #92400e !important;
-                        font-size: 12px;
-                        font-weight: 700;
-                        margin-bottom: 8px;
-                        text-transform: uppercase;
-                    }
-                    
-                    .print-area .notice-section p {
-                        color: #78350f !important;
-                        font-size: 10px;
-                        line-height: 1.4;
-                        margin: 0;
-                    }
-                    
-                    /* Typography Improvements */
-                    .print-area .customer-name {
-                        font-size: 16px !important;
-                        font-weight: 700 !important;
-                        color: #1e40af !important;
-                        margin-bottom: 8px;
-                    }
-                    
-                    .print-area .customer-details {
-                        font-size: 11px;
-                        color: #64748b !important;
-                        line-height: 1.4;
-                    }
-                    
-                    /* Flex layouts for print */
-                    .print-area .flex {
-                        display: table;
-                        width: 100%;
-                        margin: 4px 0;
-                    }
-                    
-                    .print-area .flex > span:first-child {
-                        display: table-cell;
-                        width: 60%;
-                        padding-right: 15px;
-                        color: #64748b !important;
-                        font-weight: 500;
-                    }
-                    
-                    .print-area .flex > span:last-child {
-                        display: table-cell;
-                        text-align: right;
-                        font-weight: 700;
-                        color: #1e293b !important;
-                    }
-                    
-                    /* Special highlighting */
-                    .print-area .text-red-600 {
+                    /* Colors */
+                    .print-area .text-red {
                         color: #dc2626 !important;
-                        font-weight: 700;
-                        background: #fef2f2;
-                        padding: 2px 6px;
-                        border-radius: 4px;
                     }
                     
-                    .print-area .text-green-600 {
+                    .print-area .text-green {
                         color: #059669 !important;
-                        font-weight: 700;
-                        background: #f0fdf4;
-                        padding: 2px 6px;
-                        border-radius: 4px;
                     }
                     
-                    /* Page Settings */
+                    .print-area .text-blue {
+                        color: #1e40af !important;
+                    }
+                    
+                    .print-area .text-gray {
+                        color: #666 !important;
+                    }
+                    
+                    /* Background colors */
+                    .print-area .bg-blue {
+                        background-color: #4a90e2 !important;
+                        color: white !important;
+                    }
+                    
+                    .print-area .bg-light {
+                        background-color: #f8f9fa !important;
+                    }
+                    
+                    .print-area .bg-warning {
+                        background-color: #fff3cd !important;
+                    }
+                    
+                    .print-area .bg-info {
+                        background-color: #e8f4fd !important;
+                    }
+                    
+                    /* Borders */
+                    .print-area .border {
+                        border: 1px solid #ddd !important;
+                    }
+                    
+                    .print-area .border-dark {
+                        border: 1px solid #000 !important;
+                    }
+                    
+                    .print-area .border-thick {
+                        border: 2px solid #000 !important;
+                    }
+                    
+                    .print-area .border-bottom {
+                        border-bottom: 1px solid #000 !important;
+                    }
+                    
+                    /* Text alignment */
+                    .print-area .text-center {
+                        text-align: center !important;
+                    }
+                    
+                    .print-area .text-right {
+                        text-align: right !important;
+                    }
+                    
+                    .print-area .text-left {
+                        text-align: left !important;
+                    }
+                    
+                    /* Font weight */
+                    .print-area .font-bold {
+                        font-weight: bold !important;
+                    }
+                    
+                    /* Page settings */
                     @page {
                         margin: 0.5in;
                         size: A4;
                     }
                     
-                    /* Page Break Management */
-                    .print-area .customer-info,
-                    .print-area .invoice-details,
-                    .print-area .summary-section,
-                    .print-area .charges-section {
-                        page-break-inside: avoid;
-                    }
-                    
+                    /* Page break management */
                     .print-area table {
                         page-break-inside: auto;
                     }
@@ -1384,314 +1077,570 @@ export default function InvoiceShow({
                         </div>
                     </div>
 
-                    {/* Print Layout - This is what gets printed */}
-                    <div className="print-area" >
-                        {/* Company Header - Print Only */}
-                        <div className="company-info invoice-header">
-                            <div className="text-center mb-6">
+                  {/* Print Layout - Exact Sithruwana.lk Style */}
+                    <div className="print-area">
+                        {/* Header - Logo, Company Info & Invoice Title */}
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            paddingBottom: '20px',
+                            borderBottom: '1px solid #000',
+                            marginBottom: '30px'
+                        }}>
+                            {/* Left Side - Logo & Company Info */}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', flex: '1' }}>
+                                {/* Logo */}
                                 {invoice.company?.logo && (
-                                    <img 
-                                        src={invoice.company.logo} 
-                                        alt={invoice.company.name}
-                                        className="mx-auto mb-4 h-16 object-contain"
-                                    />
+                                    <div style={{
+                                        width: '80px',
+                                        height: '80px',
+                                        border: '2px solid #000',
+                                        borderRadius: '8px',
+                                        marginRight: '20px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        backgroundColor: '#f8f9fa'
+                                    }}>
+                                        <img 
+                                            src={invoice.company.logo} 
+                                            alt={invoice.company.name}
+                                            style={{
+                                                maxWidth: '70px',
+                                                maxHeight: '70px',
+                                                objectFit: 'contain'
+                                            }}
+                                        />
+                                    </div>
                                 )}
-                                <h1 className="text-3xl font-bold mb-2">
-                                    {invoice.company?.name || 'PrintCraft Pro'}
+                                
+                                {/* Company Info */}
+                                <div>
+                                    <h1 style={{
+                                        fontSize: '28px',
+                                        fontWeight: 'bold',
+                                        margin: '0 0 5px 0',
+                                        color: '#000'
+                                    }}>
+                                        {invoice.company?.name || 'PrintCraft Pro'}
+                                    </h1>
+                                    <div style={{
+                                        fontSize: '12px',
+                                        color: '#666',
+                                        lineHeight: '1.4'
+                                    }}>
+                                        {invoice.company?.address && (
+                                            <div>{invoice.company.address}</div>
+                                        )}
+                                        <div style={{ marginTop: '3px' }}>
+                                            {invoice.company?.phone && (
+                                                <span>📞 {invoice.company.phone}</span>
+                                            )}
+                                            {invoice.company?.email && (
+                                                <span style={{ marginLeft: '15px' }}>🌐 {invoice.company.email}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Right Side - Invoice Title */}
+                            <div style={{ textAlign: 'right' }}>
+                                <h1 style={{
+                                    fontSize: '36px',
+                                    fontWeight: 'bold',
+                                    margin: '0',
+                                    color: '#000'
+                                }}>
+                                    INVOICE
                                 </h1>
-                                {invoice.company?.address && (
-                                    <p className="text-sm">{invoice.company.address}</p>
-                                )}
-                                <div className="flex justify-center space-x-4 text-sm mt-2">
-                                    {invoice.company?.phone && (
-                                        <span>Phone: {invoice.company.phone}</span>
-                                    )}
-                                    {invoice.company?.email && (
-                                        <span>Email: {invoice.company.email}</span>
-                                    )}
-                                </div>
                             </div>
                         </div>
 
-                        {/* Invoice Header */}
-                        <div className="invoice-details border-b pb-4 mb-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <h2 className="text-2xl font-bold mb-4">INVOICE</h2>
-                                    <div className="space-y-2">
-                                        <div className="flex">
-                                            <span className="font-medium w-32">Invoice #:</span>
-                                            <span className="font-bold">{invoice.invoice_number}</span>
+                        {/* Customer & Invoice Details Row */}
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            marginBottom: '30px'
+                        }}>
+                            {/* Left Side - Customer Details */}
+                            <div style={{ flex: '1' }}>
+                                <div style={{
+                                    border: '1px solid #ddd',
+                                    borderRadius: '5px',
+                                    padding: '15px',
+                                    marginRight: '20px'
+                                }}>
+                                    <div style={{
+                                        fontSize: '14px',
+                                        fontWeight: 'bold',
+                                        marginBottom: '10px',
+                                        color: '#000'
+                                    }}>
+                                        To,
+                                    </div>
+                                    <div style={{
+                                        fontSize: '16px',
+                                        fontWeight: 'bold',
+                                        marginBottom: '5px',
+                                        color: '#000',
+                                        textTransform: 'uppercase'
+                                    }}>
+                                        {invoice.customer.name}
+                                    </div>
+                                    {invoice.customer.phone && (
+                                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '3px' }}>
+                                            {invoice.customer.phone}
                                         </div>
-                                        <div className="flex">
-                                            <span className="font-medium w-32">Invoice Date:</span>
-                                            <span>{formatDate(invoice.invoice_date)}</span>
+                                    )}
+                                    {invoice.customer.email && (
+                                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '3px' }}>
+                                            {invoice.customer.email}
                                         </div>
-                                        <div className="flex">
-                                            <span className="font-medium w-32">Due Date:</span>
-                                            <span className={isOverdue ? 'text-red-600 font-bold' : ''}>
+                                    )}
+                                    {invoice.customer.address && (
+                                        <div style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+                                            {invoice.customer.address}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Right Side - Invoice Details */}
+                            <div style={{ flex: '0 0 300px' }}>
+                                <table style={{
+                                    width: '100%',
+                                    border: '1px solid #ddd',
+                                    borderCollapse: 'collapse',
+                                    fontSize: '12px'
+                                }}>
+                                    <tbody>
+                                        <tr>
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                border: '1px solid #ddd',
+                                                fontWeight: 'bold',
+                                                backgroundColor: '#f8f9fa'
+                                            }}>
+                                                Invoice :
+                                            </td>
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                border: '1px solid #ddd',
+                                                textAlign: 'right'
+                                            }}>
+                                                {invoice.invoice_number}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                border: '1px solid #ddd',
+                                                fontWeight: 'bold',
+                                                backgroundColor: '#f8f9fa'
+                                            }}>
+                                                Date :
+                                            </td>
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                border: '1px solid #ddd',
+                                                textAlign: 'right'
+                                            }}>
+                                                {formatDate(invoice.invoice_date)}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                border: '1px solid #ddd',
+                                                fontWeight: 'bold',
+                                                backgroundColor: '#f8f9fa'
+                                            }}>
+                                                Due Date :
+                                            </td>
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                border: '1px solid #ddd',
+                                                textAlign: 'right',
+                                                color: isOverdue ? 'red' : 'inherit'
+                                            }}>
                                                 {formatDate(invoice.due_date)}
-                                                {isOverdue && ' (OVERDUE)'}
-                                            </span>
-                                        </div>
-                                        <div className="flex">
-                                            <span className="font-medium w-32">Status:</span>
-                                            <span className="badge">
-                                                {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                                            </span>
-                                        </div>
-                                        <div className="flex">
-                                            <span className="font-medium w-32">Payment:</span>
-                                            <span className="badge">
-                                                {invoice.payment_status.replace('_', ' ').charAt(0).toUpperCase() + 
-                                                 invoice.payment_status.replace('_', ' ').slice(1)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h3 className="font-bold mb-2">Branch Information</h3>
-                                    <div className="space-y-1">
-                                        <div className="font-medium">{invoice.branch.name}</div>
-                                        <div className="text-sm">Branch Code: {invoice.branch.code}</div>
-                                        {invoice.branch.address && (
-                                            <div className="text-sm">{invoice.branch.address}</div>
-                                        )}
-                                        {invoice.branch.phone && (
-                                            <div className="text-sm">Phone: {invoice.branch.phone}</div>
-                                        )}
-                                    </div>
-                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                border: '1px solid #ddd',
+                                                fontWeight: 'bold',
+                                                backgroundColor: '#f8f9fa'
+                                            }}>
+                                                Status :
+                                            </td>
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                border: '1px solid #ddd',
+                                                textAlign: 'right',
+                                                textTransform: 'capitalize'
+                                            }}>
+                                                {invoice.status}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
-                        {/* Customer Information */}
-                        <div className="customer-info border-b pb-4 mb-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <h3 className="font-bold mb-3">Bill To:</h3>
-                                    <div className="space-y-1">
-                                        <div className="font-bold text-lg">{invoice.customer.name}</div>
-                                        <div className="text-sm">Customer Code: {invoice.customer.customer_code}</div>
-                                        {invoice.customer.phone && (
-                                            <div className="text-sm">Phone: {invoice.customer.phone}</div>
-                                        )}
-                                        {invoice.customer.email && (
-                                            <div className="text-sm">Email: {invoice.customer.email}</div>
-                                        )}
-                                        {invoice.customer.address && (
-                                            <div className="text-sm mt-2">
-                                                <strong>Address:</strong><br />
-                                                {invoice.customer.address}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h3 className="font-bold mb-3">Payment Summary:</h3>
-                                    <div className="space-y-1 text-sm">
-                                        <div className="flex justify-between">
-                                            <span>Total Amount:</span>
-                                            <span className="font-bold">{formatCurrency(invoice.total_amount)}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>Amount Paid:</span>
-                                            <span className="text-green-600 font-medium">{formatCurrency(paymentData.total_paid)}</span>
-                                        </div>
-                                        <div className="flex justify-between border-t pt-1">
-                                            <span>Balance Due:</span>
-                                            <span className={`font-bold ${paymentData.remaining_balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                                {formatCurrency(paymentData.remaining_balance)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        {/* Opening Message */}
+                        <div style={{
+                            backgroundColor: '#e8f4fd',
+                            border: '1px solid #bee5eb',
+                            padding: '12px',
+                            marginBottom: '20px',
+                            fontSize: '12px',
+                            color: '#0c5460'
+                        }}>
+                            Dear Sir/madam,<br />
+                            Thank You For Your Valuable Business. We Are Pleased To Provide Invoice For Your Order As Below
                         </div>
 
                         {/* Invoice Items Table */}
-                        <div className="mb-6">
-                            <h3 className="font-bold mb-3">Invoice Items</h3>
-                            <table className="w-full">
+                        <div style={{ marginBottom: '20px' }}>
+                            <table style={{
+                                width: '100%',
+                                borderCollapse: 'collapse',
+                                border: '2px solid #000',
+                                fontSize: '12px'
+                            }}>
                                 <thead>
-                                    <tr style={{ backgroundColor: '#f8f9fa' }}>
-                                        <th className="text-left py-3 px-2">Item Description</th>
-                                        <th className="text-center py-3 px-2">Qty</th>
-                                        <th className="text-center py-3 px-2">Weight (kg)</th>
-                                        <th className="text-right py-3 px-2">Unit Price</th>
-                                        <th className="text-right py-3 px-2">Line Total</th>
+                                    <tr style={{ backgroundColor: '#4a90e2', color: 'white' }}>
+                                        <th style={{
+                                            padding: '12px 8px',
+                                            border: '1px solid #000',
+                                            textAlign: 'center',
+                                            fontWeight: 'bold',
+                                            width: '40px'
+                                        }}>
+                                            #
+                                        </th>
+                                        <th style={{
+                                            padding: '12px 8px',
+                                            border: '1px solid #000',
+                                            textAlign: 'left',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            DESCRIPTION
+                                        </th>
+                                        <th style={{
+                                            padding: '12px 8px',
+                                            border: '1px solid #000',
+                                            textAlign: 'center',
+                                            fontWeight: 'bold',
+                                            width: '80px'
+                                        }}>
+                                            QTY
+                                        </th>
+                                        <th style={{
+                                            padding: '12px 8px',
+                                            border: '1px solid #000',
+                                            textAlign: 'center',
+                                            fontWeight: 'bold',
+                                            width: '100px'
+                                        }}>
+                                            PRICE
+                                        </th>
+                                        <th style={{
+                                            padding: '12px 8px',
+                                            border: '1px solid #000',
+                                            textAlign: 'center',
+                                            fontWeight: 'bold',
+                                            width: '120px'
+                                        }}>
+                                            TOTAL
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {invoice.items.map((item, index) => (
-                                        <tr key={item.id} style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : '#f8f9fa' }}>
-                                            <td className="py-3 px-2">
-                                                <div className="font-medium">
+                                        <tr key={item.id}>
+                                            <td style={{
+                                                padding: '12px 8px',
+                                                border: '1px solid #ddd',
+                                                textAlign: 'center',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                {index + 1}
+                                            </td>
+                                            <td style={{
+                                                padding: '12px 8px',
+                                                border: '1px solid #ddd',
+                                                verticalAlign: 'top'
+                                            }}>
+                                                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
                                                     {item.product?.name || item.item_description}
                                                 </div>
                                                 {item.specifications && Object.keys(item.specifications).length > 0 && (
-                                                    <div className="text-xs text-gray-600 mt-1">
+                                                    <div style={{
+                                                        fontSize: '10px',
+                                                        color: '#666',
+                                                        fontStyle: 'italic'
+                                                    }}>
                                                         {Object.entries(item.specifications).map(([key, value]) => (
                                                             <div key={key}>
-                                                                {key}: {String(value)}
+                                                                ({key}: {String(value)})
                                                             </div>
                                                         ))}
                                                     </div>
                                                 )}
+                                                {getLineWeight(item.line_weight) > 0 && (
+                                                    <div style={{
+                                                        fontSize: '10px',
+                                                        color: '#666',
+                                                        marginTop: '4px'
+                                                    }}>
+                                                        {getLineWeight(item.line_weight).toFixed(2)} kg
+                                                    </div>
+                                                )}
                                             </td>
-                                            <td className="text-center py-3 px-2">{item.quantity}</td>
-                                            <td className="text-center py-3 px-2">{getLineWeight(item.line_weight).toFixed(2)}</td>
-                                            <td className="text-right py-3 px-2">{formatCurrency(item.unit_price)}</td>
-                                            <td className="text-right py-3 px-2 font-medium">{formatCurrency(item.line_total)}</td>
+                                            <td style={{
+                                                padding: '12px 8px',
+                                                border: '1px solid #ddd',
+                                                textAlign: 'center'
+                                            }}>
+                                                {item.quantity}
+                                            </td>
+                                            <td style={{
+                                                padding: '12px 8px',
+                                                border: '1px solid #ddd',
+                                                textAlign: 'right'
+                                            }}>
+                                                {formatCurrency(item.unit_price)}
+                                            </td>
+                                            <td style={{
+                                                padding: '12px 8px',
+                                                border: '1px solid #ddd',
+                                                textAlign: 'right',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                {formatCurrency(item.line_total)}
+                                            </td>
                                         </tr>
                                     ))}
+                                    
+                                    {/* Empty row for spacing if needed */}
+                                    <tr>
+                                        <td colSpan={5} style={{
+                                            padding: '10px',
+                                            border: 'none'
+                                        }}></td>
+                                    </tr>
+                                    
+                                    {/* Total Row */}
+                                    <tr>
+                                        <td colSpan={4} style={{
+                                            padding: '12px 8px',
+                                            border: '1px solid #000',
+                                            textAlign: 'right',
+                                            fontSize: '14px',
+                                            fontWeight: 'bold',
+                                            backgroundColor: '#f8f9fa'
+                                        }}>
+                                            TOTAL :
+                                        </td>
+                                        <td style={{
+                                            padding: '12px 8px',
+                                            border: '1px solid #000',
+                                            textAlign: 'right',
+                                            fontSize: '14px',
+                                            fontWeight: 'bold',
+                                            backgroundColor: '#f8f9fa'
+                                        }}>
+                                            {formatCurrency(invoice.total_amount)}
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
 
-                        {/* Invoice Totals */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <div>
-                                {/* Weight Summary */}
-                                <div className="bg-gray-50 p-4 rounded">
-                                    <h4 className="font-bold mb-2">Weight Summary</h4>
-                                    <div className="text-sm space-y-1">
-                                        <div className="flex justify-between">
-                                            <span>Total Weight:</span>
-                                            <span className="font-medium">{(parseFloat(String(invoice.total_weight)) || 0).toFixed(2)} kg</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>Delivery Charge:</span>
-                                            <span className="font-medium">{formatCurrency(invoice.weight_charge)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                {/* Financial Summary */}
-                                <div className="bg-gray-50 p-4 rounded">
-                                    <h4 className="font-bold mb-3">Invoice Total</h4>
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between">
-                                            <span>Subtotal:</span>
-                                            <span>{formatCurrency(invoice.subtotal)}</span>
-                                        </div>
-                                        {invoice.weight_charge > 0 && (
-                                            <div className="flex justify-between">
-                                                <span>Delivery Charge:</span>
-                                                <span>{formatCurrency(invoice.weight_charge)}</span>
-                                            </div>
-                                        )}
-                                        {invoice.tax_amount > 0 && (
-                                            <div className="flex justify-between">
-                                                <span>Tax:</span>
-                                                <span>{formatCurrency(invoice.tax_amount)}</span>
-                                            </div>
-                                        )}
-                                        {invoice.discount_amount > 0 && (
-                                            <div className="flex justify-between text-red-600">
-                                                <span>Discount:</span>
-                                                <span>-{formatCurrency(invoice.discount_amount)}</span>
-                                            </div>
-                                        )}
-                                        <div className="border-t pt-2 flex justify-between font-bold text-lg">
-                                            <span>Total Amount:</span>
-                                            <span>{formatCurrency(invoice.total_amount)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Payment Information - Print Only if payments exist */}
+                        {/* Payment History (if exists) */}
                         {paymentData.payments && paymentData.payments.length > 0 && (
-                            <div className="mb-6">
-                                <h3 className="font-bold mb-3">Payment History</h3>
-                                <table className="w-full">
+                            <div style={{ marginBottom: '30px' }}>
+                                <h4 style={{
+                                    fontSize: '14px',
+                                    fontWeight: 'bold',
+                                    marginBottom: '10px',
+                                    color: '#000'
+                                }}>
+                                    Payment History:
+                                </h4>
+                                <table style={{
+                                    width: '100%',
+                                    borderCollapse: 'collapse',
+                                    border: '1px solid #ddd',
+                                    fontSize: '11px'
+                                }}>
                                     <thead>
                                         <tr style={{ backgroundColor: '#f8f9fa' }}>
-                                            <th className="text-left py-2 px-2">Date</th>
-                                            <th className="text-left py-2 px-2">Method</th>
-                                            <th className="text-left py-2 px-2">Reference</th>
-                                            <th className="text-right py-2 px-2">Amount</th>
-                                            <th className="text-center py-2 px-2">Status</th>
+                                            <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Date</th>
+                                            <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Method</th>
+                                            <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'right' }}>Amount</th>
+                                            <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>Status</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {paymentData.payments.map((payment, index) => (
-                                            <tr key={payment.id} style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : '#f8f9fa' }}>
-                                                <td className="py-2 px-2">{formatDate(payment.payment_date)}</td>
-                                                <td className="py-2 px-2">{payment.payment_method_label}</td>
-                                                <td className="py-2 px-2 text-xs">{payment.payment_reference}</td>
-                                                <td className="text-right py-2 px-2 font-medium">{formatCurrency(payment.amount)}</td>
-                                                <td className="text-center py-2 px-2">
-                                                    <span className="badge text-xs">{payment.status_label}</span>
+                                        {paymentData.payments.map((payment) => (
+                                            <tr key={payment.id}>
+                                                <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                                                    {formatDate(payment.payment_date)}
+                                                </td>
+                                                <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                                                    {payment.payment_method_label}
+                                                </td>
+                                                <td style={{ 
+                                                    padding: '8px', 
+                                                    border: '1px solid #ddd', 
+                                                    textAlign: 'right',
+                                                    fontWeight: 'bold'
+                                                }}>
+                                                    {formatCurrency(payment.amount)}
+                                                </td>
+                                                <td style={{ 
+                                                    padding: '8px', 
+                                                    border: '1px solid #ddd', 
+                                                    textAlign: 'center',
+                                                    fontSize: '10px',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    {payment.status_label}
                                                 </td>
                                             </tr>
                                         ))}
+                                        <tr style={{ backgroundColor: '#f8f9fa', fontWeight: 'bold' }}>
+                                            <td colSpan={2} style={{ padding: '10px 8px', border: '1px solid #ddd' }}>
+                                                Balance Due:
+                                            </td>
+                                            <td style={{ 
+                                                padding: '10px 8px', 
+                                                border: '1px solid #ddd', 
+                                                textAlign: 'right',
+                                                color: paymentData.remaining_balance > 0 ? 'red' : 'green'
+                                            }}>
+                                                {formatCurrency(paymentData.remaining_balance)}
+                                            </td>
+                                            <td style={{ padding: '10px 8px', border: '1px solid #ddd' }}></td>
+                                        </tr>
                                     </tbody>
                                 </table>
                             </div>
                         )}
 
-                        {/* Notes */}
-                        {invoice.notes && (
-                            <div className="mb-6">
-                                <h3 className="font-bold mb-2">Notes</h3>
-                                <div className="bg-gray-50 p-3 rounded text-sm">
-                                    {invoice.notes}
-                                </div>
+                        {/* Terms & Conditions */}
+                        <div style={{
+                            marginBottom: '40px',
+                            fontSize: '12px'
+                        }}>
+                            <div style={{ marginBottom: '8px' }}>
+                                ❖ Valid Only for One Month from Date of Invoice.
                             </div>
-                        )}
+                            <div style={{ marginBottom: '8px' }}>
+                                ❖ 60% Advance and Balance on Delivery Date.
+                            </div>
+                            {invoice.notes && (
+                                <div style={{
+                                    backgroundColor: '#fff3cd',
+                                    border: '1px solid #ffeaa7',
+                                    padding: '10px',
+                                    marginTop: '15px',
+                                    borderRadius: '4px'
+                                }}>
+                                    <strong>Notes:</strong> {invoice.notes}
+                                </div>
+                            )}
+                        </div>
 
-                        {/* Print Job Information - If exists */}
+                        {/* Print Job Info (if exists) */}
                         {printJob && (
-                            <div className="mb-6">
-                                <h3 className="font-bold mb-3">Production Information</h3>
-                                <div className="bg-blue-50 p-4 rounded">
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                        <div>
-                                            <div className="space-y-1">
-                                                <div><strong>Job Number:</strong> {printJob.job_number}</div>
-                                                <div><strong>Job Type:</strong> {jobTypes[printJob.job_type] || printJob.job_type}</div>
-                                                <div><strong>Priority:</strong> {printJob.priority.charAt(0).toUpperCase() + printJob.priority.slice(1)}</div>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div className="space-y-1">
-                                                <div><strong>Status:</strong> {printJob.production_status.replace('_', ' ').charAt(0).toUpperCase() + printJob.production_status.replace('_', ' ').slice(1)}</div>
-                                                <div><strong>Estimated Completion:</strong> {formatDate(printJob.estimated_completion)}</div>
-                                                {printJob.assigned_to && (
-                                                    <div><strong>Assigned To:</strong> {printJob.assigned_to.name}</div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
+                            <div style={{
+                                backgroundColor: '#e7f3ff',
+                                border: '1px solid #b3d9ff',
+                                padding: '15px',
+                                marginBottom: '30px',
+                                borderRadius: '4px'
+                            }}>
+                                <h4 style={{
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                    marginBottom: '8px',
+                                    color: '#000'
+                                }}>
+                                    Production Information:
+                                </h4>
+                                <div style={{ fontSize: '11px', lineHeight: '1.4' }}>
+                                    <div>Job Number: <strong>{printJob.job_number}</strong></div>
+                                    <div>Status: <strong>{printJob.production_status.replace('_', ' ')}</strong></div>
+                                    <div>Est. Completion: <strong>{formatDate(printJob.estimated_completion)}</strong></div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Footer */}
-                        <div className="text-center text-xs text-gray-500 mt-8 border-t pt-4">
-                            <div>Thank you for your business!</div>
-                            <div className="mt-2">
-                                Generated on: {new Date().toLocaleDateString('en-US', { 
-                                    year: 'numeric', 
-                                    month: 'long', 
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                })}
+                        {/* Footer - Signature */}
+                        <div style={{
+                            marginTop: '60px',
+                            textAlign: 'right',
+                            paddingRight: '50px'
+                        }}>
+                            <div style={{
+                                borderBottom: '1px solid #000',
+                                width: '200px',
+                                marginLeft: 'auto',
+                                marginBottom: '5px',
+                                height: '40px',
+                                display: 'flex',
+                                alignItems: 'flex-end',
+                                justifyContent: 'center',
+                                paddingBottom: '5px'
+                            }}>
+                                <span style={{
+                                    fontSize: '20px',
+                                    fontFamily: 'cursive',
+                                    color: '#666'
+                                }}>
+                                    {invoice.creator.name.split(' ').map(n => n[0]).join('')}
+                                </span>
                             </div>
-                            <div className="mt-1">
+                            <div style={{
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                color: '#000'
+                            }}>
+                                AUTHORIZED SIGNATURE
+                            </div>
+                        </div>
+
+                        {/* Footer Info */}
+                        <div style={{
+                            position: 'absolute',
+                            bottom: '20px',
+                            left: '0',
+                            right: '0',
+                            textAlign: 'center',
+                            fontSize: '10px',
+                            color: '#666',
+                            borderTop: '1px solid #ddd',
+                            paddingTop: '10px'
+                        }}>
+                            <div>Generated on: {new Date().toLocaleDateString('en-US', { 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            })}</div>
+                            <div style={{ marginTop: '3px' }}>
                                 Created by: {invoice.creator.name} | Branch: {invoice.branch.name}
                             </div>
                         </div>
                     </div>
-
                     {/* Screen Content - Hidden during print */}
                     <div className="no-print">
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

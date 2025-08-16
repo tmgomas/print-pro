@@ -341,6 +341,15 @@ export default function ExpensesIndex({
                                 </Link>
                             </Button>
                         )}
+
+                        {can.create && (
+                            <Button asChild>
+                                <Link href="/expense-categories/create">
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add Expense Catogory
+                                </Link>
+                            </Button>
+                        )}
                     </div>
                 </div>
 
