@@ -57,4 +57,21 @@ abstract class BaseService
         
         throw $e;
     }
+    // BaseService.php එකේ add කරන්න:
+
+/**
+ * Create a new record with transaction and callback
+ */
+public function createWithTransaction(array $data, ?callable $callback = null): Model
+{
+    return DB::transaction(function () use ($data, $callback) {
+        $model = $this->repository->create($data);
+        
+        if ($callback && is_callable($callback)) {
+            $callback($model);
+        }
+        
+        return $model;
+    });
+}
 }

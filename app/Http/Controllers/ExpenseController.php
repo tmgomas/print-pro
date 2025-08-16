@@ -84,7 +84,7 @@ class ExpenseController extends Controller
         $branches = $user->hasRole(['super_admin', 'company_admin'])
                    ? Branch::forCompany($companyId)->active()->get()
                    : collect([$user->branch]);
-
+        
         return Inertia::render('Expenses/Create', [
             'categories' => $categories,
             'branches' => $branches,

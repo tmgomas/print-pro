@@ -11,28 +11,33 @@ use Carbon\Carbon;
 class ExpenseRepository extends BaseRepository
 {
     /**
-     * Get model instance
+     * Constructor
      */
-    protected function getModel(): Model
+    public function __construct(Expense $model)
     {
-        return new Expense();
+        parent::__construct($model);
     }
 
     /**
-     * Get expenses for a specific company
+     * Get paginated expenses with filters
      */
-    public function getCompanyExpenses(int $companyId, array $filters = []): LengthAwarePaginator
+    public function getPaginatedExpenses(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        $query = $this->model->where('company_id', $companyId);
+        $query = $this->model->newQuery();
+
+        // Apply company filter
+        if (!empty($filters['company_id'])) {
+            $query->where('company_id', $filters['company_id']);
+        }
 
         // Apply branch filter
         if (!empty($filters['branch_id'])) {
             $query->where('branch_id', $filters['branch_id']);
         }
 
-        // Apply category filter
+        // Apply category filter - FIXED: use 'category_id' not 'expense_category_id'
         if (!empty($filters['category_id'])) {
-            $query->where('expense_category_id', $filters['category_id']);
+            $query->where('category_id', $filters['category_id']);
         }
 
         // Apply status filter
@@ -40,14 +45,14 @@ class ExpenseRepository extends BaseRepository
             $query->where('status', $filters['status']);
         }
 
-        // Apply approval status filter
-        if (!empty($filters['approval_status'])) {
-            $query->where('approval_status', $filters['approval_status']);
+        // Apply priority filter
+        if (!empty($filters['priority'])) {
+            $query->where('priority', $filters['priority']);
         }
 
-        // Apply payment status filter
-        if (!empty($filters['payment_status'])) {
-            $query->where('payment_status', $filters['payment_status']);
+        // Apply payment method filter
+        if (!empty($filters['payment_method'])) {
+            $query->where('payment_method', $filters['payment_method']);
         }
 
         // Apply date range filter
@@ -77,16 +82,97 @@ class ExpenseRepository extends BaseRepository
             });
         }
 
-        // Apply employee filter
-        if (!empty($filters['submitted_by'])) {
-            $query->where('submitted_by', $filters['submitted_by']);
+        // Apply employee filter - FIXED: use 'created_by' not 'submitted_by'
+        if (!empty($filters['submitted_by']) || !empty($filters['created_by'])) {
+            $userId = $filters['submitted_by'] ?? $filters['created_by'];
+            $query->where('created_by', $userId);
+        }
+
+        // Apply sorting
+        $sortBy = $filters['sort_by'] ?? 'expense_date';
+        $sortOrder = $filters['sort_order'] ?? 'desc';
+        
+        $allowedSortFields = ['expense_date', 'amount', 'created_at', 'status', 'expense_number'];
+        if (!in_array($sortBy, $allowedSortFields)) {
+            $sortBy = 'expense_date';
+        }
+        
+        $query->orderBy($sortBy, $sortOrder);
+        
+        // Secondary sort by created_at for consistency
+        if ($sortBy !== 'created_at') {
+            $query->orderBy('created_at', 'desc');
         }
 
         return $query
             ->with([
                 'category:id,name,code,color',
                 'branch:id,name,code',
-                'submittedBy:id,name,email',
+                'createdBy:id,name,email',  // FIXED: use 'createdBy' not 'submittedBy'
+                'approvedBy:id,name,email'
+            ])
+            ->paginate($perPage);
+    }
+
+    /**
+     * Get expenses for a specific company
+     */
+    public function getCompanyExpenses(int $companyId, array $filters = []): LengthAwarePaginator
+    {
+        $query = $this->model->where('company_id', $companyId);
+
+        // Apply branch filter
+        if (!empty($filters['branch_id'])) {
+            $query->where('branch_id', $filters['branch_id']);
+        }
+
+        // Apply category filter - FIXED
+        if (!empty($filters['category_id'])) {
+            $query->where('category_id', $filters['category_id']);
+        }
+
+        // Apply status filter
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        // Apply date range filter
+        if (!empty($filters['date_from'])) {
+            $query->where('expense_date', '>=', $filters['date_from']);
+        }
+        if (!empty($filters['date_to'])) {
+            $query->where('expense_date', '<=', $filters['date_to']);
+        }
+
+        // Apply amount range filter
+        if (!empty($filters['amount_min'])) {
+            $query->where('amount', '>=', $filters['amount_min']);
+        }
+        if (!empty($filters['amount_max'])) {
+            $query->where('amount', '<=', $filters['amount_max']);
+        }
+
+        // Apply search filter
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+            $query->where(function ($q) use ($search) {
+                $q->where('description', 'like', "%{$search}%")
+                  ->orWhere('expense_number', 'like', "%{$search}%")
+                  ->orWhere('vendor_name', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%");
+            });
+        }
+
+        // Apply employee filter - FIXED
+        if (!empty($filters['created_by'])) {
+            $query->where('created_by', $filters['created_by']);
+        }
+
+        return $query
+            ->with([
+                'category:id,name,code,color',
+                'branch:id,name,code',
+                'createdBy:id,name,email',  // FIXED
                 'approvedBy:id,name,email'
             ])
             ->orderBy('expense_date', 'desc')
@@ -101,7 +187,7 @@ class ExpenseRepository extends BaseRepository
     {
         $query = $this->model
             ->where('company_id', $companyId)
-            ->where('expense_category_id', $categoryId);
+            ->where('category_id', $categoryId);  // FIXED
 
         // Apply date range filter
         if (!empty($filters['date_from'])) {
@@ -112,7 +198,7 @@ class ExpenseRepository extends BaseRepository
         }
 
         return $query
-            ->with(['branch:id,name', 'submittedBy:id,name'])
+            ->with(['branch:id,name', 'createdBy:id,name'])  // FIXED
             ->orderBy('expense_date', 'desc')
             ->get();
     }
@@ -122,16 +208,11 @@ class ExpenseRepository extends BaseRepository
      */
     public function getExpensesByEmployee(int $userId, array $filters = []): LengthAwarePaginator
     {
-        $query = $this->model->where('submitted_by', $userId);
+        $query = $this->model->where('created_by', $userId);  // FIXED
 
         // Apply status filter
         if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);
-        }
-
-        // Apply approval status filter
-        if (!empty($filters['approval_status'])) {
-            $query->where('approval_status', $filters['approval_status']);
         }
 
         // Apply date range filter
@@ -159,7 +240,7 @@ class ExpenseRepository extends BaseRepository
     {
         $query = $this->model
             ->where('company_id', $companyId)
-            ->where('approval_status', 'pending');
+            ->where('status', 'pending_approval');  // FIXED: use correct status value
 
         if ($branchId) {
             $query->where('branch_id', $branchId);
@@ -169,7 +250,7 @@ class ExpenseRepository extends BaseRepository
             ->with([
                 'category:id,name,code,color',
                 'branch:id,name,code',
-                'submittedBy:id,name,email'
+                'createdBy:id,name,email'  // FIXED
             ])
             ->orderBy('expense_date', 'asc')
             ->get();
@@ -182,8 +263,7 @@ class ExpenseRepository extends BaseRepository
     {
         $query = $this->model
             ->where('company_id', $companyId)
-            ->where('approval_status', 'approved')
-            ->where('payment_status', 'pending');
+            ->where('status', 'approved');
 
         if ($branchId) {
             $query->where('branch_id', $branchId);
@@ -193,52 +273,11 @@ class ExpenseRepository extends BaseRepository
             ->with([
                 'category:id,name,code,color',
                 'branch:id,name,code',
-                'submittedBy:id,name,email',
+                'createdBy:id,name,email',  // FIXED
                 'approvedBy:id,name,email'
             ])
             ->orderBy('expense_date', 'asc')
             ->get();
-    }
-
-    /**
-     * Get overdue expenses
-     */
-    public function getOverdueExpenses(int $companyId, ?int $branchId = null): Collection
-    {
-        $query = $this->model
-            ->where('company_id', $companyId)
-            ->where('due_date', '<', now())
-            ->where('payment_status', '!=', 'paid');
-
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
-
-        return $query
-            ->with([
-                'category:id,name,code,color',
-                'branch:id,name,code',
-                'submittedBy:id,name,email'
-            ])
-            ->orderBy('due_date', 'asc')
-            ->get();
-    }
-
-    /**
-     * Generate unique expense number
-     */
-    public function generateExpenseNumber(int $branchId): string
-    {
-        $branch = \App\Models\Branch::findOrFail($branchId);
-        
-        $lastExpense = $this->model
-            ->where('branch_id', $branchId)
-            ->orderBy('id', 'desc')
-            ->first();
-            
-        $nextNumber = $lastExpense ? intval(substr($lastExpense->expense_number, -6)) + 1 : 1;
-        
-        return 'EXP-' . $branch->code . '-' . str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -256,14 +295,11 @@ class ExpenseRepository extends BaseRepository
         $totalExpenses = (clone $query)->count();
         $totalAmount = (clone $query)->sum('amount');
         
-        // Status-based stats
-        $pendingCount = (clone $query)->where('approval_status', 'pending')->count();
-        $approvedCount = (clone $query)->where('approval_status', 'approved')->count();
-        $rejectedCount = (clone $query)->where('approval_status', 'rejected')->count();
-        
-        // Payment status stats
-        $paidCount = (clone $query)->where('payment_status', 'paid')->count();
-        $unpaidCount = (clone $query)->where('payment_status', 'pending')->count();
+        // Status-based stats - FIXED: use correct status values
+        $pendingCount = (clone $query)->where('status', 'pending_approval')->count();
+        $approvedCount = (clone $query)->where('status', 'approved')->count();
+        $rejectedCount = (clone $query)->where('status', 'rejected')->count();
+        $paidCount = (clone $query)->where('status', 'paid')->count();
         
         // This month stats
         $thisMonthAmount = (clone $query)
@@ -276,12 +312,6 @@ class ExpenseRepository extends BaseRepository
             ->whereYear('expense_date', now()->year)
             ->count();
 
-        // Overdue count
-        $overdueCount = (clone $query)
-            ->where('due_date', '<', now())
-            ->where('payment_status', '!=', 'paid')
-            ->count();
-
         return [
             'total_expenses' => $totalExpenses,
             'total_amount' => $totalAmount,
@@ -289,129 +319,11 @@ class ExpenseRepository extends BaseRepository
             'approved' => $approvedCount,
             'rejected' => $rejectedCount,
             'paid' => $paidCount,
-            'unpaid' => $unpaidCount,
-            'overdue' => $overdueCount,
             'this_month_amount' => $thisMonthAmount,
             'this_month_count' => $thisMonthCount,
             'formatted_total_amount' => 'Rs. ' . number_format($totalAmount, 2),
             'formatted_this_month_amount' => 'Rs. ' . number_format($thisMonthAmount, 2),
         ];
-    }
-
-    /**
-     * Get monthly expense report
-     */
-    public function getMonthlyExpenseReport(int $companyId, int $year, ?int $branchId = null): array
-    {
-        $query = $this->model
-            ->where('company_id', $companyId)
-            ->whereYear('expense_date', $year);
-
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
-
-        $results = $query->selectRaw('
-                MONTH(expense_date) as month,
-                COUNT(*) as expense_count,
-                SUM(amount) as total_amount
-            ')
-            ->groupBy('month')
-            ->orderBy('month')
-            ->get();
-
-        $monthlyData = array_fill(1, 12, ['expense_count' => 0, 'total_amount' => 0]);
-        
-        foreach ($results as $result) {
-            $monthlyData[$result->month] = [
-                'expense_count' => (int) $result->expense_count,
-                'total_amount' => (float) $result->total_amount,
-                'formatted_amount' => 'Rs. ' . number_format($result->total_amount, 2),
-            ];
-        }
-
-        return $monthlyData;
-    }
-
-    /**
-     * Get category-wise expense breakdown
-     */
-    public function getCategoryWiseExpenses(int $companyId, Carbon $startDate, Carbon $endDate, ?int $branchId = null): array
-    {
-        $query = $this->model
-            ->where('company_id', $companyId)
-            ->whereBetween('expense_date', [$startDate, $endDate]);
-
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
-
-        return $query
-            ->join('expense_categories', 'expenses.expense_category_id', '=', 'expense_categories.id')
-            ->selectRaw('
-                expense_categories.name as category_name,
-                expense_categories.code as category_code,
-                expense_categories.color as category_color,
-                COUNT(expenses.id) as expense_count,
-                SUM(expenses.amount) as total_amount,
-                AVG(expenses.amount) as average_amount
-            ')
-            ->groupBy('expense_categories.id', 'expense_categories.name', 'expense_categories.code', 'expense_categories.color')
-            ->orderByDesc('total_amount')
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'category_name' => $item->category_name,
-                    'category_code' => $item->category_code,
-                    'category_color' => $item->category_color,
-                    'expense_count' => (int) $item->expense_count,
-                    'total_amount' => (float) $item->total_amount,
-                    'average_amount' => (float) $item->average_amount,
-                    'formatted_total' => 'Rs. ' . number_format($item->total_amount, 2),
-                    'formatted_average' => 'Rs. ' . number_format($item->average_amount, 2),
-                ];
-            })
-            ->toArray();
-    }
-
-    /**
-     * Get top spenders report
-     */
-    public function getTopSpendersReport(int $companyId, Carbon $startDate, Carbon $endDate, ?int $branchId = null, int $limit = 10): array
-    {
-        $query = $this->model
-            ->where('company_id', $companyId)
-            ->whereBetween('expense_date', [$startDate, $endDate]);
-
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
-
-        return $query
-            ->join('users', 'expenses.submitted_by', '=', 'users.id')
-            ->selectRaw('
-                users.name as employee_name,
-                users.email as employee_email,
-                COUNT(expenses.id) as expense_count,
-                SUM(expenses.amount) as total_amount,
-                AVG(expenses.amount) as average_amount
-            ')
-            ->groupBy('users.id', 'users.name', 'users.email')
-            ->orderByDesc('total_amount')
-            ->limit($limit)
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'employee_name' => $item->employee_name,
-                    'employee_email' => $item->employee_email,
-                    'expense_count' => (int) $item->expense_count,
-                    'total_amount' => (float) $item->total_amount,
-                    'average_amount' => (float) $item->average_amount,
-                    'formatted_total' => 'Rs. ' . number_format($item->total_amount, 2),
-                    'formatted_average' => 'Rs. ' . number_format($item->average_amount, 2),
-                ];
-            })
-            ->toArray();
     }
 
     /**
@@ -424,9 +336,9 @@ class ExpenseRepository extends BaseRepository
             ->with([
                 'category:id,name,code,color',
                 'branch:id,name',
-                'submittedBy:id,name'
+                'createdBy:id,name'  // FIXED
             ])
-            ->select('id', 'expense_number', 'description', 'amount', 'expense_date', 'approval_status', 'payment_status', 'expense_category_id', 'branch_id', 'submitted_by');
+            ->select('id', 'expense_number', 'description', 'amount', 'expense_date', 'status', 'category_id', 'branch_id', 'created_by');  // FIXED
 
         if ($branchId) {
             $query->where('branch_id', $branchId);
@@ -457,7 +369,7 @@ class ExpenseRepository extends BaseRepository
             ->with([
                 'category:id,name,code,color',
                 'branch:id,name',
-                'submittedBy:id,name'
+                'createdBy:id,name'  // FIXED
             ])
             ->orderBy('expense_date', 'desc')
             ->limit(50)
@@ -473,9 +385,8 @@ class ExpenseRepository extends BaseRepository
             ->with([
                 'category',
                 'branch',
-                'submittedBy',
-                'approvedBy',
-                'attachments'
+                'createdBy',    // FIXED
+                'approvedBy'
             ])
             ->find($expenseId);
     }
@@ -485,7 +396,7 @@ class ExpenseRepository extends BaseRepository
      */
     public function bulkUpdateStatus(array $expenseIds, string $status, array $additionalData = []): bool
     {
-        $updateData = array_merge(['approval_status' => $status], $additionalData);
+        $updateData = array_merge(['status' => $status], $additionalData);
         
         return $this->model->whereIn('id', $expenseIds)->update($updateData);
     }
@@ -497,12 +408,12 @@ class ExpenseRepository extends BaseRepository
     {
         $query = $this->model->where('company_id', $companyId);
 
-        // Apply filters (same as getCompanyExpenses but without pagination)
+        // Apply filters
         if (!empty($filters['branch_id'])) {
             $query->where('branch_id', $filters['branch_id']);
         }
         if (!empty($filters['category_id'])) {
-            $query->where('expense_category_id', $filters['category_id']);
+            $query->where('category_id', $filters['category_id']);  // FIXED
         }
         if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);
@@ -518,7 +429,7 @@ class ExpenseRepository extends BaseRepository
             ->with([
                 'category:id,name,code',
                 'branch:id,name,code',
-                'submittedBy:id,name,email',
+                'createdBy:id,name,email',  // FIXED
                 'approvedBy:id,name,email'
             ])
             ->orderBy('expense_date', 'desc')

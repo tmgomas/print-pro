@@ -47,6 +47,39 @@ import {
 } from 'lucide-react';
 import { BreadcrumbItem } from '@/types';
 
+// Safe currency formatting utility
+const formatCurrency = (amount: number | string | null | undefined): string => {
+    if (amount === null || amount === undefined || amount === '' || Number.isNaN(Number(amount))) {
+        return 'Rs. 0.00';
+    }
+    
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    
+    if (Number.isNaN(numAmount)) {
+        return 'Rs. 0.00';
+    }
+    
+    return `Rs. ${numAmount.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    })}`;
+};
+
+// Safe number formatting without currency
+const formatNumber = (value: number | string | null | undefined): string => {
+    if (value === null || value === undefined || value === '' || Number.isNaN(Number(value))) {
+        return '0';
+    }
+    
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    
+    if (Number.isNaN(numValue)) {
+        return '0';
+    }
+    
+    return numValue.toLocaleString('en-US');
+};
+
 interface Expense {
     id: number;
     company_id: number;
@@ -309,7 +342,7 @@ export default function ExpensesIndex({
                     </div>
                 </div>
 
-                {/* Stats Cards */}
+                {/* Stats Cards - FIXED: Safe currency formatting */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card>
                         <CardContent className="p-6">
@@ -317,7 +350,7 @@ export default function ExpensesIndex({
                                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
                             </div>
                             <div className="mt-2">
-                                <p className="text-2xl font-bold">Rs. {stats.this_month_total.toLocaleString()}</p>
+                                <p className="text-2xl font-bold">{formatCurrency(stats?.this_month_total)}</p>
                                 <p className="text-xs text-muted-foreground">This Month</p>
                             </div>
                         </CardContent>
@@ -329,9 +362,9 @@ export default function ExpensesIndex({
                                 <Clock className="h-4 w-4 text-yellow-600" />
                             </div>
                             <div className="mt-2">
-                                <p className="text-2xl font-bold">{stats.pending_approval.count}</p>
+                                <p className="text-2xl font-bold">{formatNumber(stats?.pending_approval?.count)}</p>
                                 <p className="text-xs text-muted-foreground">
-                                    Pending (Rs. {stats.pending_approval.total.toLocaleString()})
+                                    Pending ({formatCurrency(stats?.pending_approval?.total)})
                                 </p>
                             </div>
                         </CardContent>
@@ -344,10 +377,10 @@ export default function ExpensesIndex({
                             </div>
                             <div className="mt-2">
                                 <p className="text-2xl font-bold">
-                                    {stats.by_status?.approved?.count || 0}
+                                    {formatNumber(stats?.by_status?.approved?.count)}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                    Approved (Rs. {(stats.by_status?.approved?.total || 0).toLocaleString()})
+                                    Approved ({formatCurrency(stats?.by_status?.approved?.total)})
                                 </p>
                             </div>
                         </CardContent>
@@ -360,10 +393,10 @@ export default function ExpensesIndex({
                             </div>
                             <div className="mt-2">
                                 <p className="text-2xl font-bold">
-                                    {stats.by_status?.paid?.count || 0}
+                                    {formatNumber(stats?.by_status?.paid?.count)}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                    Paid (Rs. {(stats.by_status?.paid?.total || 0).toLocaleString()})
+                                    Paid ({formatCurrency(stats?.by_status?.paid?.total)})
                                 </p>
                             </div>
                         </CardContent>
@@ -393,7 +426,7 @@ export default function ExpensesIndex({
                                         <SelectValue placeholder="All Status" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="">All Status</SelectItem>
+                                        <SelectItem value="all">All Status</SelectItem>
                                         {Object.entries(statusOptions).map(([key, label]) => (
                                             <SelectItem key={key} value={key}>{label}</SelectItem>
                                         ))}
@@ -408,7 +441,7 @@ export default function ExpensesIndex({
                                         <SelectValue placeholder="All Categories" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="">All Categories</SelectItem>
+                                        <SelectItem value="all">All Categories</SelectItem>
                                         {categories.map((category) => (
                                             <SelectItem key={category.id} value={category.id.toString()}>
                                                 {category.name} ({category.code})
@@ -451,7 +484,7 @@ export default function ExpensesIndex({
                                         <SelectValue placeholder="Priority" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="">All Priorities</SelectItem>
+                                        <SelectItem value="all">All Priorities</SelectItem>
                                         {Object.entries(priorityOptions).map(([key, label]) => (
                                             <SelectItem key={key} value={key}>{label}</SelectItem>
                                         ))}
@@ -466,7 +499,7 @@ export default function ExpensesIndex({
                                         <SelectValue placeholder="Payment Method" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="">All Methods</SelectItem>
+                                        <SelectItem value="all">All Methods</SelectItem>
                                         {Object.entries(paymentMethodOptions).map(([key, label]) => (
                                             <SelectItem key={key} value={key}>{label}</SelectItem>
                                         ))}
@@ -482,7 +515,7 @@ export default function ExpensesIndex({
                                             <SelectValue placeholder="Branch" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="">All Branches</SelectItem>
+                                            <SelectItem value="all">All Branches</SelectItem>
                                             {branches.map((branch) => (
                                                 <SelectItem key={branch.id} value={branch.id.toString()}>
                                                     {branch.branch_name}
@@ -643,7 +676,7 @@ export default function ExpensesIndex({
                                         <div className="flex items-center gap-4">
                                             <div className="text-right">
                                                 <div className="text-lg font-semibold">
-                                                    {expense.formatted_amount}
+                                                    {expense.formatted_amount || formatCurrency(expense.amount)}
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <Badge className={getStatusColor(expense.status)}>

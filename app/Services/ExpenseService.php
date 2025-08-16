@@ -16,11 +16,169 @@ class ExpenseService extends BaseService
     public function __construct(
         private ExpenseRepository $expenseRepository,
         private ExpenseBudgetRepository $budgetRepository,
-        private NotificationService $notificationService
+       
     ) {
         $this->repository = $expenseRepository;
     }
 
+    // Add these methods to ExpenseService class:
+
+/**
+ * Submit expense for approval
+ */
+public function submitForApproval(Expense $expense, ?string $notes = null): bool
+{
+    try {
+        if ($expense->status !== 'draft') {
+            throw new \InvalidArgumentException('Only draft expenses can be submitted for approval');
+        }
+
+        return $expense->update([
+            'status' => 'pending_approval',
+            'notes' => $notes ?? $expense->notes,
+        ]);
+
+    } catch (\Exception $e) {
+        $this->handleException($e, 'submit for approval', $expense);
+        throw $e;
+    }
+}
+
+/**
+ * Approve expense
+ */
+public function approveExpense(Expense $expense, User $approver, ?string $notes = null): bool
+{
+    try {
+        if ($expense->status !== 'pending_approval') {
+            throw new \InvalidArgumentException('Only pending expenses can be approved');
+        }
+
+        $updated = $expense->update([
+            'status' => 'approved',
+            'approved_by' => $approver->id,
+            'approved_at' => now(),
+            'approval_notes' => $notes,
+        ]);
+
+        if ($updated) {
+            // Update budget spending if needed
+            $this->budgetRepository->updateCategorySpending(
+                $expense->category_id,
+                $expense->company_id,
+                $expense->branch_id
+            );
+        }
+
+        return $updated;
+
+    } catch (\Exception $e) {
+        $this->handleException($e, 'approve expense', $expense);
+        throw $e;
+    }
+}
+
+/**
+ * Reject expense
+ */
+public function rejectExpense(Expense $expense, User $approver, string $reason): bool
+{
+    try {
+        if ($expense->status !== 'pending_approval') {
+            throw new \InvalidArgumentException('Only pending expenses can be rejected');
+        }
+
+        return $expense->update([
+            'status' => 'rejected',
+            'approved_by' => $approver->id,
+            'approved_at' => now(),
+            'rejection_reason' => $reason,
+        ]);
+
+    } catch (\Exception $e) {
+        $this->handleException($e, 'reject expense', $expense);
+        throw $e;
+    }
+}
+
+/**
+ * Update expense
+ */
+public function updateExpense(Expense $expense, array $data, User $user): bool
+{
+    try {
+        if (!in_array($expense->status, ['draft', 'rejected'])) {
+            throw new \InvalidArgumentException('Only draft or rejected expenses can be updated');
+        }
+
+        // Reset status to draft if it was rejected
+        if ($expense->status === 'rejected') {
+            $data['status'] = 'draft';
+            $data['rejection_reason'] = null;
+            $data['approved_by'] = null;
+            $data['approved_at'] = null;
+        }
+
+        return $this->updateWithTransaction($expense, $data);
+
+    } catch (\Exception $e) {
+        $this->handleException($e, 'update expense', $expense);
+        throw $e;
+    }
+}
+
+/**
+ * Calculate next due date for recurring expenses
+ */
+private function calculateNextDueDate(Carbon $currentDate, string $period): Carbon
+{
+    return match($period) {
+        'weekly' => $currentDate->addWeek(),
+        'monthly' => $currentDate->addMonth(),
+        'quarterly' => $currentDate->addQuarter(),
+        'yearly' => $currentDate->addYear(),
+        default => $currentDate->addMonth(),
+    };
+}
+
+/**
+ * Generate next recurring expense
+ */
+private function generateNextRecurringExpense(Expense $expense): ?Expense
+{
+    if (!$expense->is_recurring || !$expense->next_due_date) {
+        return null;
+    }
+
+    try {
+        $nextExpenseData = [
+            'company_id' => $expense->company_id,
+            'branch_id' => $expense->branch_id,
+            'category_id' => $expense->category_id,
+            'created_by' => $expense->created_by,
+            'expense_number' => $this->expenseRepository->generateExpenseNumber($expense->branch_id),
+            'expense_date' => $expense->next_due_date,
+            'amount' => $expense->amount,
+            'description' => $expense->description . ' (Recurring)',
+            'vendor_name' => $expense->vendor_name,
+            'payment_method' => $expense->payment_method,
+            'priority' => $expense->priority,
+            'is_recurring' => true,
+            'recurring_period' => $expense->recurring_period,
+            'next_due_date' => $this->calculateNextDueDate(
+                Carbon::parse($expense->next_due_date),
+                $expense->recurring_period
+            ),
+            'status' => 'draft',
+        ];
+
+        return $this->createWithTransaction($nextExpenseData);
+
+    } catch (\Exception $e) {
+        $this->handleException($e, 'generate recurring expense', $expense);
+        return null;
+    }
+}
     /**
      * Create new expense
      */
@@ -58,110 +216,9 @@ class ExpenseService extends BaseService
         }
     }
 
-    /**
-     * Update expense
-     */
-    public function updateExpense(Expense $expense, array $data, User $user): bool
-    {
-        try {
-            $this->validateBusinessRules([
-                'expense_editable' => $expense->can_edit,
-                'user_can_edit' => $user->can('update', $expense)
-            ]);
 
-            $oldCategoryId = $expense->category_id;
-            $oldAmount = $expense->amount;
-            $oldStatus = $expense->status;
 
-            return $this->updateWithTransaction($expense, $data, function ($expense) use ($oldCategoryId, $oldAmount, $oldStatus) {
-                // Update budget spending if relevant fields changed
-                if ($oldCategoryId !== $expense->category_id || 
-                    $oldAmount !== $expense->amount || 
-                    $oldStatus !== $expense->status) {
-                    
-                    $this->updateBudgetSpending($expense, $oldCategoryId, $oldAmount);
-                }
-            });
 
-        } catch (\Exception $e) {
-            $this->handleException($e, 'update expense', $expense);
-            throw $e;
-        }
-    }
-
-    /**
-     * Submit expense for approval
-     */
-    public function submitForApproval(Expense $expense, string $notes = null): bool
-    {
-        try {
-            $this->validateBusinessRules([
-                'expense_is_draft' => $expense->status === 'draft'
-            ]);
-
-            $submitted = $expense->submitForApproval($notes);
-
-            if ($submitted) {
-                $this->notifyApprovers($expense);
-            }
-
-            return $submitted;
-
-        } catch (\Exception $e) {
-            $this->handleException($e, 'submit for approval', $expense);
-            throw $e;
-        }
-    }
-
-    /**
-     * Approve expense
-     */
-    public function approveExpense(Expense $expense, User $approver, string $notes = null): bool
-    {
-        try {
-            $this->validateBusinessRules([
-                'expense_pending' => $expense->status === 'pending_approval',
-                'user_can_approve' => $approver->can('approve', $expense)
-            ]);
-
-            return $this->updateWithTransaction($expense, [], function ($expense) use ($approver, $notes) {
-                $expense->approve($approver, $notes);
-                $this->updateBudgetSpending($expense);
-                $this->checkBudgetAlerts($expense);
-                $this->notificationService->notifyExpenseApproved($expense);
-            });
-
-        } catch (\Exception $e) {
-            $this->handleException($e, 'approve expense', $expense);
-            throw $e;
-        }
-    }
-
-    /**
-     * Reject expense
-     */
-    public function rejectExpense(Expense $expense, User $approver, string $reason): bool
-    {
-        try {
-            $this->validateBusinessRules([
-                'expense_pending' => $expense->status === 'pending_approval',
-                'user_can_approve' => $approver->can('approve', $expense),
-                'reason_provided' => !empty($reason)
-            ]);
-
-            $rejected = $expense->reject($approver, $reason);
-
-            if ($rejected) {
-                $this->notificationService->notifyExpenseRejected($expense);
-            }
-
-            return $rejected;
-
-        } catch (\Exception $e) {
-            $this->handleException($e, 'reject expense', $expense);
-            throw $e;
-        }
-    }
 
     /**
      * Mark expense as paid
@@ -238,20 +295,6 @@ class ExpenseService extends BaseService
         return $results;
     }
 
-    /**
-     * Private helper methods
-     */
-    private function calculateNextDueDate(Carbon $currentDate, string $period): Carbon
-    {
-        return match($period) {
-            'weekly' => $currentDate->copy()->addWeek(),
-            'monthly' => $currentDate->copy()->addMonth(),
-            'quarterly' => $currentDate->copy()->addQuarter(),
-            'yearly' => $currentDate->copy()->addYear(),
-            default => $currentDate->copy()->addMonth()
-        };
-    }
-
     private function updateBudgetSpending(Expense $expense, int $oldCategoryId = null, float $oldAmount = null): void
     {
         if (!in_array($expense->status, ['approved', 'paid'])) {
@@ -302,30 +345,4 @@ class ExpenseService extends BaseService
         }
     }
 
-    private function generateNextRecurringExpense(Expense $expense): ?Expense
-    {
-        if (!$expense->is_recurring || !$expense->next_due_date) {
-            return null;
-        }
-
-        try {
-            $nextExpense = $expense->replicate([
-                'expense_number', 'approved_by', 'approved_at', 'paid_at',
-                'approval_notes', 'rejection_reason'
-            ]);
-
-            $nextExpense->status = 'draft';
-            $nextExpense->expense_date = $expense->next_due_date;
-            $nextExpense->expense_number = Expense::generateExpenseNumber($expense->company_id, $expense->branch_id);
-            $nextExpense->next_due_date = $this->calculateNextDueDate($expense->next_due_date, $expense->recurring_period);
-            
-            $nextExpense->save();
-
-            return $nextExpense;
-
-        } catch (\Exception $e) {
-            $this->handleException($e, 'generate recurring expense', $expense);
-            return null;
-        }
-    }
 }
